@@ -1,6 +1,6 @@
-# New BOXVIA+ (EDOS)
+# EDOS
 
-**New BOXVIA+** (Experimental Design and Optimization System) is a powerful, web-based platform designed for researchers and engineers to perform **Design of Experiments (DoE)** and **Statistical Analysis (SA)** with ease.
+**EDOS** (Experimental Design and Optimization System) is a powerful, web-based platform designed for researchers and engineers to perform **Design of Experiments (DoE)** and **Statistical Analysis (SA)** with ease.
 
 ## Key Features
 
