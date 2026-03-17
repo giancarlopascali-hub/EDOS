@@ -1,12 +1,13 @@
 # EDOS
 
-**EDOS** (Experimental Design and Optimization System) is a powerful, web-based platform designed for researchers and engineers to perform **Design of Experiments (DoE)** and **Statistical Analysis (SA)** with ease.
+**EDOS** (Experimental Design and Optimization System) is a powerful, web-based platform designed for researchers and engineers to perform **Design of Experiments (DoE)**, **Bayesian Optimization (BO)** and **Statistical Analysis (SA)** with ease.
 
 ## Key Features
 
-- **Advanced DoE Module**: Generate Box-Behnken, Central Composite, and Fractional Factorial designs.
+- **Advanced DoE Module**: Generate Box-Behnken, Central Composite, Fractional Factorial and Definitive Screening designs.
 - **Scientific Quality Metrics**: Real-time calculation of Orthogonality, D-Efficiency, Resolution, and Curvature detection with a visual "Quality Dashboard".
-- **Statistical Analysis (SA)**: Perform robust analysis on experimental data, including feature importance, correlation, and success-based optimization.
+- **Bayesian Optimizer**: Suggest the best tests to perform next and improve your peformance, visualazing objective trends and Pareto front. It supports categorical parameters and multi-objective optimization.
+- **Statistical Analysis (SA)**: Perform basic analysis on experimental data, including feature importance, correlation, and success-based optimization.
 - **Standalone Capability**: Bundled into a Windows executable for easy deployment.
 
 ## Installation and Running (Windows Standalone)
