@@ -7,7 +7,7 @@
 - **Advanced DoE Module**: Generate Box-Behnken, Central Composite, Fractional Factorial and Definitive Screening designs.
 - **Scientific Quality Metrics**: Real-time calculation of Orthogonality, D-Efficiency, Resolution, and Curvature detection with a visual "Quality Dashboard".
 - **Bayesian Optimizer**: Suggest the best tests to perform next and improve your peformance, visualazing objective trends and Pareto front. It supports categorical parameters and multi-objective optimization.
-- **Statistical Analysis (SA)**: Perform basic analysis on experimental data, including feature importance, correlation, and success-based optimization.
+- **Statistical Analysis**: Perform basic analysis on experimental data, including feature importance, correlation, and success-based optimization.
 - **Standalone Capability**: Bundled into a Windows executable for easy deployment.
 
 ## Installation and Running (Windows Standalone)
