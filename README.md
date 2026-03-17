@@ -11,10 +11,15 @@
 
 ## Installation and Running (Windows Standalone)
 
-1. **Download**: You can download the latest standalone version from the [Releases](https://github.com/giancarlopascali-hub/EDOS/releases) page (coming soon) or as a ZIP file if shared directly.
+1. **Download**: You can download the latest standalone version from the [Releases](https://github.com/giancarlopascali-hub/EDOS/releases) page.
 2. **Extract**: Right-click the `EDOS_v1.0_Windows.zip` file and select "Extract All...".
-3. **Run**: Open the extracted folder, navigate to the `EDOS_v1.0` subfolder, and double-click **`EDOS_v1.0.exe`**.
-4. **Access**: The application will automatically start a local server. If your browser doesn't open automatically, go to `http://127.0.0.1:5000` in Chrome or Edge.
+3. **Run**: 
+   - Open the extracted folder.
+   - **Note**: The application lives entirely within its folder structure; do not move the `.exe` file out of the `EDOS_v1.0` folder.
+   - Double-click **`EDOS_v1.0.exe`**.
+4. **Access**: The application will automatically start a local server. If your browser doesn't open automatically, go to `http://127.0.0.1:5000`.
+5. **Shutdown**: To close the application properly, press the **"Shutdown"** button within the web interface before closing the window.
+
 
 ## Technical Stack
 
