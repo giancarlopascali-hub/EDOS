@@ -903,11 +903,18 @@ def export_csv():
 
 
 if __name__ == '__main__':
-    import threading
-    import webbrowser
-    def open_browser():
-        import time
-        time.sleep(1.5)
-        webbrowser.open('http://127.0.0.1:5000')
-    threading.Thread(target=open_browser, daemon=True).start()
-    app.run(debug=False, use_reloader=False)
+    import os
+    port = int(os.environ.get("PORT", 7860))
+    
+    # Only open browser if running locally on default port
+    if port == 5000:
+        import threading
+        import webbrowser
+        def open_browser():
+            import time
+            time.sleep(1.5)
+            webbrowser.open(f'http://127.0.0.1:{port}')
+        threading.Thread(target=open_browser, daemon=True).start()
+        
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+
