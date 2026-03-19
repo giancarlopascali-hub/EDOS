@@ -16,6 +16,14 @@ jobs:
       - name: Push to hub
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: git push --force https://realgcp:$HF_TOKEN@huggingface.co/spaces/realgcp/EDOS-app main
+        run: |
+          git config --global user.email "realgcp@users.noreply.github.com"
+          git config --global user.name "realgcp"
+          git checkout --orphan hf-deployment
+          git reset
+          git add app.py requirements.txt Dockerfile .dockerignore README.md static/ templates/ .gitignore
+          git commit -m "Deploy from GitHub Actions"
+          git push --force https://realgcp:$HF_TOKEN@huggingface.co/spaces/realgcp/EDOS-app hf-deployment:main
+
 
 
