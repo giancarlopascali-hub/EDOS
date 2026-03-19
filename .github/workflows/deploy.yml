@@ -16,5 +16,6 @@ jobs:
       - name: Push to hub
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: git push --force https://giancarlopascali-hub:$HF_TOKEN@huggingface.co/spaces/realgcp/EDOS-app main
+        run: git push --force https://realgcp:$HF_TOKEN@huggingface.co/spaces/realgcp/EDOS-app main
+
 
