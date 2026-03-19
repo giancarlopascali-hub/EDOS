@@ -1,4 +1,15 @@
+---
+title: EDOS
+emoji: 🚀
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # EDOS
+
 
 **EDOS** (Experimental Design and Optimization System) is a powerful, web-based platform designed for researchers and engineers to perform **Design of Experiments (DoE)**, **Bayesian Optimization (BO)** and **Statistical Analysis (SA)** with ease.
 
