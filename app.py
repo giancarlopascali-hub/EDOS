@@ -585,6 +585,11 @@ def run_sa():
         
         df = pd.DataFrame(data, columns=columns)
         
+        # Ensure categorical columns are treated as strings to avoid mixed-type issues
+        for f in features_config:
+            if f.get('type') == 'categorical':
+                df[f['name']] = df[f['name']].astype(str)
+        
         # Prepare X and Y
         feat_names = [f['name'] for f in features_config if f.get('range')]
         obj_names = [o['name'] for o in objectives_config]
@@ -794,7 +799,7 @@ def estimate_sa():
         input_data_raw = pd.DataFrame([input_values], columns=feat_names)
         for col in feat_names:
             if df[col].dtype == object or str(df[col].dtype) in ['string', 'category']:
-                unique_train_vals = df[col].unique().astype(str)
+                unique_train_vals = df[col].astype(str).unique()
                 input_data_raw[col] = pd.Categorical(input_data_raw[col].astype(str), categories=unique_train_vals)
         
         input_df_encoded = pd.get_dummies(input_data_raw)
