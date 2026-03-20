@@ -47,7 +47,9 @@ header {
     box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.2);
     border: 1px solid var(--border-color);
     position: relative;
+    background-color: #1e293b; /* Deep slate fallback background */
 }
+
 
 .app-banner {
     width: 100%;
