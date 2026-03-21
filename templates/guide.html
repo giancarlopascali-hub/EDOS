@@ -38,8 +38,38 @@
     <div class="guide-container">
         <header style="margin-bottom: 2rem;">
             <h1 style="font-size: 2.8rem; margin-bottom: 0.5rem; color: var(--text-primary);">EDOS Quick Guide</h1>
-            <p style="font-size: 1.2rem;">Complete Step-by-Step Instructions for version 1.0</p>
+            <p style="font-size: 1.2rem;">Complete Step-by-Step Instructions for version 2.0</p>
         </header>
+
+        <section class="guide-section" id="intro">
+            <h2>Optimal Workflow Overview <span class="badge">START HERE</span></h2>
+            <p>The optimal scientific workflow in EDOS relies on three main stages:</p>
+            
+            <div class="workflow-graphic" style="display: flex; justify-content: space-between; align-items: stretch; margin: 3rem 0; gap: 20px; text-align: center;">
+                <div style="flex: 1; background: var(--card-bg); padding: 2rem 1.5rem; border-radius: 12px; border: 2px solid var(--accent-color); position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+                    <div style="width: 40px; height: 40px; background: var(--accent-color); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; font-weight: bold; position: absolute; top: -20px; left: 50%; transform: translateX(-50%);">1</div>
+                    <h3 style="margin-top: 0;">DoE</h3>
+                    <p style="font-size: 0.95rem; margin-bottom: 0; color: var(--text-secondary);">Plan a robust set of initial experiments to optimally explore the parameter space</p>
+                </div>
+                <div style="display: flex; align-items: center; color: var(--accent-color); font-weight: bold; font-size: 2.5rem;">→</div>
+                <div style="flex: 1; background: var(--card-bg); padding: 2rem 1.5rem; border-radius: 12px; border: 2px solid #f59e0b; position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+                    <div style="width: 40px; height: 40px; background: #f59e0b; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; font-weight: bold; position: absolute; top: -20px; left: 50%; transform: translateX(-50%);">2</div>
+                    <div style="position: absolute; top: -15px; right: -15px; background: var(--card-bg); border-radius: 50%; padding: 4px; color: #f59e0b; display: flex; align-items: center; justify-content: center; border: 2px solid #f59e0b; box-shadow: 0 2px 5px rgba(0,0,0,0.1);" title="Cyclical process (Repeated until targets met)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                    </div>
+                    <h3 style="margin-top: 0; color: #f59e0b;">BO</h3>
+                    <p style="font-size: 0.95rem; margin-bottom: 0; color: var(--text-secondary);">Refine conditions and optimize towards targets over successive physical lab campaigns</p>
+                </div>
+                <div style="display: flex; align-items: center; color: #f59e0b; font-weight: bold; font-size: 2.5rem;">→</div>
+                <div style="flex: 1; background: var(--card-bg); padding: 2rem 1.5rem; border-radius: 12px; border: 2px solid #8b5cf6; position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+                    <div style="width: 40px; height: 40px; background: #8b5cf6; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; font-weight: bold; position: absolute; top: -20px; left: 50%; transform: translateX(-50%);">3</div>
+                    <h3 style="margin-top: 0; color: #8b5cf6;">SA</h3>
+                    <p style="font-size: 0.95rem; margin-bottom: 0; color: var(--text-secondary);">Review the data to uncover underlying trends, interactions, and physical insights</p>
+                </div>
+            </div>
+            <p>You should start by <b>planning a new experiment using the DoE module</b>. Once you have initial data, you can continuously <b>refine the conditions using one or several campaigns of Bayesian Optimization (BO)</b>. Finally, you can <b>review the resulting comprehensive data using the Statistical Analysis (SA) module</b> to extract physical insights and build predictive estimators.</p>
+            <p>However, the three modules—DoE, BO, and SA—can be used separately if you only have specific projects or aims.</p>
+        </section>
 
         <nav class="toc">
             <h4 style="margin-bottom: 1rem;">Table of Contents</h4>
@@ -59,11 +89,11 @@
             <ol>
                 <li>
                     <span class="step-title">Step 1: Define Features</span>
-                    Go to the <b>Features</b> tab. Add your input variables. Choose <b>Continuous</b> for numeric ranges (e.g., Temperature 20-100°C) or <b>Categorical</b> for discrete options (e.g., Catalyst A, B, C).
+                    Go to the <b>Features</b> tab. Add your input variables. Choose <b>Continuous</b> or <b>Discrete</b> for numeric ranges (e.g., Temperature 20-100°C) or <b>Categorical</b> for non-numerical options (e.g., Catalyst A, B, C).
                 </li>
                 <li>
                     <span class="step-title">Step 2: Add Objectives</span>
-                    Switch to the <b>Objectives</b> tab. Enter the names of the metrics you plan to measure (e.g., Yield, Purity, Cost). You don't need to specify targets yet.
+                    Switch to the <b>Objectives</b> tab. Enter the names of the metrics you plan to measure (e.g., Yield, Purity, Cost).
                 </li>
                 <li>
                     <span class="step-title">Step 3: Configure Tweaks</span>
@@ -71,7 +101,13 @@
                 </li>
                 <li>
                     <span class="step-title">Step 4: Generate & Export</span>
-                    Click <b>"Create table of experiments"</b>. Review the suggested matrix and click <b>"Export CSV"</b>. You can now perform these experiments in your lab.
+                    Click <b>"Create table of experiments"</b>. Review the suggested matrix and click <b>"Export CSV"</b>. The app will calculate quality metrics:
+                    <ul style="margin-top: 0.5rem; margin-bottom: 0;">
+                        <li><b>Orthogonality:</b> How independent the features are from each other (closer to 100% is better).</li>
+                        <li><b>D-Efficiency:</b> The overall statistical efficiency of the parameter space coverage.</li>
+                        <li><b>Resolution:</b> Indicates what types of interaction and quadratic effects can be safely estimated without confounding.</li>
+                        <li><b>Curvature:</b> Whether the design permits modeling of non-linear (curved) responses.</li>
+                    </ul>
                 </li>
             </ol>
         </section>
@@ -91,17 +127,34 @@
                     In the <b>Objectives</b> tab, tell the AI what to do for each column: <b>Maximize</b>, <b>Minimize</b>, or hit a specific <b>Target</b>. Click the "Include" checkboxes for the goals you want to focus on now.
                 </li>
                 <li>
-                    <span class="step-title">Step 3: Run the Optimizer</span>
-                    Click <b>"Run Bayesian Optimization"</b>. The AI will use GPU acceleration (if available) to simulate thousands of possibilities and pick the top recommendations.
+                    <span class="step-title">Step 3: Review Pareto Trade-offs</span>
+                    Look at the <b>Pareto Front</b> chart. Orange markers show experiments that achieve the best balance of all your objectives simultaneously.
+                    <div class="info-box" style="margin: 0.5rem 0 1rem;">
+                        <b>Tip:</b> If you have 4 or more objectives, the Pareto chart will automatically switch to a <b>Table View</b> so you can clearly see the optimal settings for high-dimensional problems.
+                    </div>
                 </li>
                 <li>
-                    <span class="step-title">Step 4: Review Pareto Trade-offs</span>
-                    Look at the <b>Pareto Front</b> chart. Orange markers show experiments that achieve the best balance of all your objectives simultaneously.
+                    <span class="step-title">Step 4: Run the Optimizer</span>
+                    Click <b>"Run Bayesian Optimization"</b>. The AI will use GPU acceleration (if available) to simulate thousands of possibilities and pick the top recommendations based on your configurations.
+                    <h4 style="margin-top: 1rem; color: var(--text-primary);">Configuring BO Tweaks</h4>
+                    <ul style="margin-top: 0.5rem; margin-bottom: 0;">
+                        <li><b>Batch Size:</b> How many new experiments the AI should propose for your next lab campaign.</li>
+                        <li><b>Acquisition Function:</b> The strategy the AI uses to score candidates (e.g., LogEI for confident improvements, or qUCB for balanced exploration).</li>
+                        <li><b>Kernel:</b> The mathematical assumption about the physical surface (Matern 5/2 is standard; RBF is smoother).</li>
+                        <li><b>Exploration vs. Exploitation:</b> A slider to tell the AI whether to take risks (focus on unknown areas) or be greedy (focus near known optimal areas).</li>
+                        <li><b>Noiseless:</b> Check this only if your lab measurements have absolutely zero variance/error (rare in physical chemistry).</li>
+                        <li><b>Avoid Re-evaluations:</b> Prevents the AI from proposing an experiment that has the exact same parameters as one you've already done.</li>
+                    </ul>
                 </li>
             </ol>
-            <div class="info-box">
-                <b>Tip:</b> If you have 4 or more objectives, the Pareto chart will automatically switch to a <b>Table View</b> so you can clearly see the optimal settings for high-dimensional problems.
-            </div>
+            
+            <h3>The Commitment Flow (Data Management)</h3>
+            <ol>
+                <li>When the BO module suggests experiments, they appear in a green-highlighted table.</li>
+                <li>Perform those experiments in the lab and <b>type the outcomes</b> directly into the cells in that table.</li>
+                <li>Once all result boxes are filled with numbers, click <b>"Add all to Main Dataset"</b>.</li>
+                <li>This merges your new data with the old, and <b>instantly refreshes all plots</b>, ready for the next round!</li>
+            </ol>
         </section>
 
         <section class="guide-section" id="sa">
@@ -126,29 +179,15 @@
 
             <h3>Understanding the Results</h3>
             <ul>
-                <li><b>Correlation Matrix:</b> A heatmap showing how strongly each numeric feature affects your goals. Blue is positive correlation; Red is negative.</li>
+                <li><b>Correlation Matrix:</b> A heatmap showing how strongly each numeric feature affects your goals.</li>
                 <li><b>Categorical Interactions:</b> Interaction matrices showing how different combinations of levels (e.g., specific catalysts at specific pressures) impact the success score.</li>
                 <li><b>Feature Impact:</b> Bar charts showing the relative importance of each variable for every specific objective.</li>
                 <li><b>Estimator Tool:</b> Use the sliders at the bottom to predict What-If scenarios. The tool gives you a predicted value and a "Success Score" based on your defined targets.</li>
             </ul>
         </section>
 
-        <section class="guide-section" id="data">
-            <h2>4. Data Management <span class="badge">WORKFLOW</span></h2>
-            <p>How to effectively grow your dataset and keep your work organized.</p>
-            
-            <h3>The Commitment Flow</h3>
-            <ol>
-                <li>When the BO module suggests experiments, they appear in a green-highlighted table.</li>
-                <li>Perform those experiments and <b>type the outcomes</b> directly into the cells in that table.</li>
-                <li>Once all result boxes are filled with numbers, click <b>"Add all to Main Dataset"</b>.</li>
-                <li>This merges your new data with the old, and <b>instantly refreshes all plots</b>.</li>
-            </ol>
-        </section>
-
-
         <footer style="margin-top: 5rem; padding-top: 2rem; border-top: 1px solid var(--border-color); text-align: center;">
-            <p>© 2026 EDOS | Developed by Giancarlo Pascali | Version 1.0</p>
+            <p>© 2026 EDOS | Developed by Giancarlo Pascali | Version 2.0</p>
         </footer>
     </div>
 
