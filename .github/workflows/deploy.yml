@@ -21,8 +21,8 @@ jobs:
           git config --global user.name "realgcp"
           git checkout --orphan hf-deployment
           git reset
-          git add app.py requirements.txt Dockerfile .dockerignore README.md static/ templates/ .gitignore
-          git commit -m "Deploy from GitHub Actions"
+          git add app.py requirements.txt Dockerfile .dockerignore README.md .gitattributes static/ templates/ .gitignore "Model functions/" performance_report_GPU.pdf
+          git commit -m "Deploy from GitHub Actions (v2.0)"
           git push --force https://realgcp:$HF_TOKEN@huggingface.co/spaces/realgcp/EDOS-app hf-deployment:main
 
 
