@@ -538,30 +538,31 @@ function initButtons() {
     
     document.getElementById('doe-export-btn').addEventListener('click', () => {
         if (!suggestionsData || suggestionsData.length === 0) return;
+        const rows = document.querySelectorAll('#doe-results-body tr');
+        if (rows.length === 0) return;
         const feats = Object.keys(suggestionsData[0]);
         const cols = [...feats, ...currentDoEObjectives.map(o => o.name)];
-        const paddedData = suggestionsData.map(r => {
-            const rowArr = feats.map(f => r[f]);
-            // Extract values from the table cells if we wanted to export entered data, 
-            // but for now we follow the existing pattern of exporting empty columns for targets.
-            currentDoEObjectives.forEach(() => rowArr.push("")); 
-            return rowArr;
+        
+        const exportArr = Array.from(rows).map(tr => {
+            const cells = tr.querySelectorAll('td');
+            return Array.from(cells).map(td => td.textContent.trim());
         });
-        exportData(paddedData, cols);
+        exportData(exportArr, cols);
     });
     
     document.getElementById('export-results-btn').addEventListener('click', () => {
         if (!suggestionsData || suggestionsData.length === 0) return;
+        const rows = document.querySelectorAll('#results-table-body tr');
+        if (rows.length === 0) return;
         const featCols = currentColumns.filter(c => columnRoles[c] === 'feature');
         const objCols = currentColumns.filter(c => columnRoles[c] === 'objective');
         const cols = [...featCols, ...objCols.map(c => `${c} (Result)`)];
         
-        const paddedData = suggestionsData.map(r => {
-            const rowArr = featCols.map(f => r[f]);
-            objCols.forEach(() => rowArr.push("")); // Empty Objective Results columns
-            return rowArr;
+        const exportArr = Array.from(rows).map(tr => {
+            const cells = tr.querySelectorAll('td');
+            return Array.from(cells).map(td => td.textContent.trim());
         });
-        exportData(paddedData, cols);
+        exportData(exportArr, cols);
     });
 
     document.getElementById('pareto-export-btn').addEventListener('click', () => {
@@ -773,10 +774,10 @@ function renderDoEResults(metrics) {
     head.innerHTML = '<tr>' + feats.map(f => `<th>${f}</th>`).join('') + objHeaders + '</tr>';
     
     body.innerHTML = suggestionsData.map(row => {
-        const featCells = feats.map(f => `<td>${row[f]}</td>`).join('');
+        const featCells = feats.map(f => `<td contenteditable="true" class="feat-input-cell editable-cell" style="background:#f8fafc; border: 1px dashed #94a3b8;">${row[f]}</td>`).join('');
         const objCells = currentDoEObjectives.length > 0
-            ? currentDoEObjectives.map(() => `<td contenteditable="true" style="background:#f0fdf4; border: 1px dashed #22c55e;"></td>`).join('')
-            : '<td contenteditable="true" style="background:#f0fdf4; border: 1px dashed #22c55e;"></td>';
+            ? currentDoEObjectives.map(() => `<td contenteditable="true" class="obj-input-cell editable-cell" style="background:#f0fdf4; border: 1px dashed #22c55e;"></td>`).join('')
+            : '<td contenteditable="true" class="obj-input-cell editable-cell" style="background:#f0fdf4; border: 1px dashed #22c55e;"></td>';
             
         return '<tr>' + featCells + objCells + '</tr>';
     }).join('');
@@ -846,23 +847,31 @@ async function runBO() {
     head.innerHTML = '<tr>' + featCols.map(c => `<th>${c}</th>`).join('') + objCols.map(c => `<th>${c} (Result)</th>`).join('') + '</tr>';
     
     const checkCommitReadiness = () => {
-        const cells = body.querySelectorAll('td[contenteditable="true"]');
+        const objCells = body.querySelectorAll('.obj-input-cell');
+        const featCells = body.querySelectorAll('.feat-input-cell');
         let allFilled = true;
-        cells.forEach(td => {
+        
+        objCells.forEach(td => {
             const val = td.textContent.trim();
             if (val === '' || isNaN(parseFloat(val))) allFilled = false;
         });
+        
+        featCells.forEach(td => {
+            const val = td.textContent.trim();
+            if (val === '') allFilled = false;
+        });
+
         commitBtn.disabled = !allFilled;
         commitBtn.style.opacity = allFilled ? '1' : '0.5';
         commitBtn.style.cursor = allFilled ? 'pointer' : 'not-allowed';
     };
 
     body.innerHTML = suggestionsData.map(row => {
-        return '<tr>' + featCols.map(c => `<td>${row[c]}</td>`).join('') + objCols.map(() => `<td contenteditable="true" class="obj-input-cell" style="background:#f0fdf4; border: 1px dashed #22c55e;"></td>`).join('') + '</tr>';
+        return '<tr>' + featCols.map(c => `<td contenteditable="true" class="feat-input-cell editable-cell" style="background:#f8fafc; border: 1px dashed #94a3b8;">${row[c]}</td>`).join('') + objCols.map(() => `<td contenteditable="true" class="obj-input-cell editable-cell" style="background:#f0fdf4; border: 1px dashed #22c55e;"></td>`).join('') + '</tr>';
     }).join('');
     
     // Add input listeners for real-time validation
-    body.querySelectorAll('.obj-input-cell').forEach(cell => {
+    body.querySelectorAll('.obj-input-cell, .feat-input-cell').forEach(cell => {
         cell.addEventListener('input', checkCommitReadiness);
     });
     
