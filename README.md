@@ -1,6 +1,6 @@
 ---
 title: EDOS
-emoji: 🚀
+emoji: 🧪
 colorFrom: blue
 colorTo: indigo
 sdk: docker
@@ -11,20 +11,20 @@ pinned: false
 # EDOS
 
 
-**EDOS** (Experimental Design and Optimization System) is a powerful platform designed for researchers and engineers to perform **Design of Experiments (DoE)**, **Bayesian Optimization (BO)** and **Statistical Analysis (SA)** with ease.
+**EDOS** (Experimental Design and Optimization System) is a powerful platform designed for researchers to perform **Design of Experiments (DoE)**, **Bayesian Optimization (BO)** and **Statistical Analysis (SA)** with ease.
 
 ## Key Features
 
-- **Advanced DoE Module**: Generate Box-Behnken, Central Composite, Fractional Factorial and Definitive Screening designs.
+- **DoE Module**: Generate Box-Behnken, Central Composite, Fractional Factorial and Definitive Screening designs.
 - **Scientific Quality Metrics**: Real-time calculation of Orthogonality, D-Efficiency, Resolution, and Curvature detection with a visual "Quality Dashboard".
-- **Bayesian Optimizer**: Suggest the best tests to perform next and improve your peformance, visualizing objective trends and Pareto front. It supports categorical parameters and multi-objective optimization.
+- **Bayesian Optimizer**: Suggest the best experiments to perform next and improve your peformance, visualizing objective trends and Pareto front. It supports categorical parameters and multi-objective optimization.
 - **Statistical Analysis**: Perform basic analysis on experimental data, including feature importance, correlation, and success-based optimization.
 - **Standalone Capability**: Bundled into a Windows executable for easy deployment.
 
 ## Installation and Running (Windows Standalone)
 
-1. **Web-app**: You can use the latest version of the app on [EDOS](https://huggingface.co/spaces/realgcp/EDOS-app) page.
-2. **Download**: You can download the latest standalone version from the [Releases](https://github.com/giancarlopascali-hub/EDOS/releases) page.
+1. **Web-app**: You can use the most updated version of the app online on [EDOS](https://huggingface.co/spaces/realgcp/EDOS-app) page.
+2. **Download**: You can download the latest standalone version from the [Releases](https://github.com/giancarlopascali-hub/EDOS/releases) page. This version is not up to date as the online one, but gives the freedom of no internet connection required to run. New releases will be available in the future, with several fixes and improvement, to align with the online version.
 3. **Extract**: Right-click the `EDOS_v1.0_Windows.zip` file and select "Extract All...".
 4. **Run**: 
    - Open the extracted folder.
