@@ -1,6 +1,7 @@
 ---
 title: EDOS
 emoji: 🧪
+favicon: static/favicon.ico
 colorFrom: blue
 colorTo: indigo
 sdk: docker
