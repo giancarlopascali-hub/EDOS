@@ -436,7 +436,6 @@ def run_doe():
                 design = doe.bbdesign(n_factors)
             elif model_type == 'fracfact':
                 if n_factors <= 4:
-                    # Explicit list of integers
                     levels = [int(2)] * n_factors
                     design = doe.fullfact(levels).astype(float)
                     design = design * 2 - 1
@@ -444,6 +443,25 @@ def run_doe():
                     design = doe.pbdesign(n_factors).astype(float)
             elif model_type == 'def_screening' or model_type == 'pbdesign':
                 design = doe.pbdesign(n_factors).astype(float)
+            elif model_type == 'lhs':
+                from pyDOE2 import lhs as lhs_sampler
+                n_numeric = sum(1 for f in valid_features if f['type'] != 'categorical')
+                n_cat = len(valid_features) - n_numeric
+                n_samples = min(max_runs, max_runs)  # use max_runs directly
+                if n_numeric > 0:
+                    # LHS on numeric features in [0, 1], then scale to [-1, 1]
+                    lhs_numeric = lhs_sampler(n_numeric, samples=n_samples, criterion='maximin')
+                    lhs_numeric = lhs_numeric * 2 - 1  # scale to [-1, 1] for compatibility
+                else:
+                    lhs_numeric = np.empty((n_samples, 0))
+                # Build full design: insert numeric columns in order, categorical handled separately
+                design = np.zeros((n_samples, len(valid_features)))
+                num_col = 0
+                for col_idx, feat in enumerate(valid_features):
+                    if feat['type'] != 'categorical':
+                        design[:, col_idx] = lhs_numeric[:, num_col]
+                        num_col += 1
+                    # categorical col stays 0; handled in the conversion loop below
             else:
                 design = doe.bbdesign(n_factors)
         except Exception as design_err:
@@ -459,24 +477,33 @@ def run_doe():
 
         # Convert to Feature Space
         suggested_table = []
-        for row in design:
+        import random
+        for row_idx, row in enumerate(design):
             entry = {}
             for i, feat in enumerate(valid_features):
                 if feat['type'] == 'categorical':
-                    # Map [-1, 0, 1] to indices if needed, or randomized
-                    # For screening/BBD, we map negative to first, positive to last, 0 to middle or randomized
-                    idx = 0
-                    if row[i] > 0.5: idx = len(feat['choices']) - 1
-                    elif row[i] < -0.5: idx = 0
-                    else: idx = len(feat['choices']) // 2
-                    entry[feat['name']] = feat['choices'][idx]
+                    if model_type == 'lhs':
+                        # Stratified assignment: cycle through choices, then shuffle within groups
+                        n_choices = len(feat['choices'])
+                        n_rows = len(design)
+                        # Build a stratified list: repeat choices as evenly as possible
+                        strat = [feat['choices'][j % n_choices] for j in range(n_rows)]
+                        # Shuffle with a fixed seed for reproducibility per feature
+                        rng = random.Random(i)
+                        rng.shuffle(strat)
+                        entry[feat['name']] = strat[row_idx]
+                    else:
+                        # Original approach for classical designs
+                        idx = 0
+                        if row[i] > 0.5: idx = len(feat['choices']) - 1
+                        elif row[i] < -0.5: idx = 0
+                        else: idx = len(feat['choices']) // 2
+                        entry[feat['name']] = feat['choices'][idx]
                 else:
                     # Map design space [-1, 1] to user space [low, high]
                     val = feat['low'] + (row[i] + 1) / 2 * (feat['high'] - feat['low'])
                     
                     if feat['type'] == 'discrete':
-                        # Map design value to the NEAREST value in the provided discrete set
-                        # First, if the user provided a range e.g. "10, 20, 30", get those values
                         d_vals = sorted([float(x.strip()) for x in feat['range'].split(',') if x.strip()])
                         if d_vals:
                             val = min(d_vals, key=lambda x: abs(x - val))
@@ -529,6 +556,8 @@ def run_doe():
                 resolution = "Poor (Insuff. Runs)"
             elif is_truncated:
                 resolution = "Reduced (Truncated)"
+            elif model_type == 'lhs':
+                resolution = "N/A (Space-Filling)"
             elif model_type == 'bbdesign' or model_type == 'ccdesign':
                 resolution = "V+ (High)"
             elif model_type == 'fracfact' or 'Plackett' in model_type:
