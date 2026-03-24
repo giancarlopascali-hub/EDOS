@@ -557,12 +557,12 @@ def run_doe():
             design_with_intercept = np.column_stack([np.ones(N_runs), X])
             rank = np.linalg.matrix_rank(design_with_intercept)
             
-            if rank < (k_factors + 1):
+            if model_type == 'lhs':
+                resolution = "N/A (Space-Filling)"
+            elif rank < (k_factors + 1):
                 resolution = "Poor (Insuff. Runs)"
             elif is_truncated:
                 resolution = "Reduced (Truncated)"
-            elif model_type == 'lhs':
-                resolution = "N/A (Space-Filling)"
             elif model_type == 'bbdesign' or model_type == 'ccdesign':
                 resolution = "V+ (High)"
             elif model_type == 'fracfact' or 'Plackett' in model_type:
