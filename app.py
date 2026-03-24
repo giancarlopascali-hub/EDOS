@@ -521,7 +521,9 @@ def run_doe():
             N_runs, k_factors = X.shape
             
             # 1. Orthogonality (Correlation)
-            if k_factors > 1:
+            if model_type == 'lhs':
+                ortho_score = "N/A"
+            elif k_factors > 1:
                 # Correlations between columns (features)
                 corr_matrix = np.abs(np.corrcoef(X, rowvar=False))
                 np.fill_diagonal(corr_matrix, 0)
@@ -534,12 +536,15 @@ def run_doe():
             # 2. D-Efficiency
             # Standard D-eff = (|X'X|^(1/k)) / N
             try:
-                xtx = np.dot(X.T, X)
-                det = np.linalg.det(xtx)
-                if det > 0:
-                    d_eff = (det**(1.0/k_factors)) / N_runs * 100
+                if model_type == 'lhs':
+                    d_eff = "N/A"
                 else:
-                    d_eff = 0
+                    xtx = np.dot(X.T, X)
+                    det = np.linalg.det(xtx)
+                    if det > 0:
+                        d_eff = (det**(1.0/k_factors)) / N_runs * 100
+                    else:
+                        d_eff = 0
             except:
                 d_eff = 0
                 
@@ -578,8 +583,8 @@ def run_doe():
                 curvature = "None (Linear only)"
 
             metrics = {
-                'orthogonality': round(ortho_score, 1),
-                'efficiency': round(d_eff, 1),
+                'orthogonality': round(ortho_score, 1) if isinstance(ortho_score, (int, float)) else ortho_score,
+                'efficiency': round(d_eff, 1) if isinstance(d_eff, (int, float)) else d_eff,
                 'resolution': resolution,
                 'curvature': curvature,
                 'runs': len(suggested_table),
