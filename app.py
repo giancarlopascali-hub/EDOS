@@ -756,10 +756,46 @@ def run_sa():
                 rel_indices = [i for i, c in enumerate(encoded_feat_names) if c == f_name or f"{f_name}_" in c]
                 val = sum(importance_pct[i] for i in rel_indices)
                 grouped_importance[f_name] = round(val, 2)
+                
+            # --- SHAP EXPLAINER PIPELINE ---
+            import shap
+            shap_data = None
+            try:
+                if model_name == 'random_forest':
+                    explainer = shap.TreeExplainer(model)
+                    shap_vals = explainer.shap_values(X_data)
+                elif model_name == 'mlp':
+                    background = shap.kmeans(X_data, min(50, len(X_data)))
+                    explainer = shap.KernelExplainer(model.predict, background)
+                    shap_vals = explainer.shap_values(X_data)
+                elif model_name == 'linear':
+                    explainer = shap.LinearExplainer(model, X_data)
+                    shap_vals = explainer.shap_values(X_data)
+                
+                # Single-output model returns 2D array, some versions return list
+                if isinstance(shap_vals, list):
+                    shap_vals = shap_vals[0]
+                    
+                # Group dummy SHAP values back to original parent features
+                grouped_shap = {f: np.zeros(len(X_data)) for f in feat_names}
+                for f_name in feat_names:
+                    rel_indices = [i for i, c in enumerate(encoded_feat_names) if c == f_name or f"{f_name}_" in c]
+                    for idx in rel_indices:
+                        grouped_shap[f_name] += shap_vals[:, idx]
+                        
+                shap_data = {
+                    'features': feat_names,
+                    'shap_values': [grouped_shap[f].tolist() for f in feat_names],
+                    'feature_values': [X_raw[f].tolist() for f in feat_names]
+                }
+            except Exception as e:
+                print(f"SHAP Explainer execution failed on {model_name}: {e}")
+            # --- END SHAP PIPELINE ---
             
             results[obj] = {
                 'reliability': None if np.isnan(reliability) else round(float(reliability), 3),
                 'importance': grouped_importance,
+                'shap_data': shap_data,
                 'fit_flag': 'Good' if reliability > 0.7 else ('Limited' if reliability >= 0.4 else 'Poor')
             }
             

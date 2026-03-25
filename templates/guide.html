@@ -182,7 +182,12 @@
             <ul>
                 <li><b>Correlation Matrix:</b> A heatmap showing how strongly each numeric feature affects your goals.</li>
                 <li><b>Categorical Interactions:</b> Interaction matrices showing how different combinations of levels (e.g., specific catalysts at specific pressures) impact the success score.</li>
-                <li><b>Feature Impact:</b> Bar charts showing the relative importance of each variable for every specific objective.</li>
+                <li><b>Feature Impact (SHAP Analysis):</b> A dual-panel interactive plot revealing exactly how each parameter drives the outcomes.
+                    <ul style="margin-top: 5px; margin-bottom: 5px;">
+                        <li><b>Left Panel (% Impact):</b> Bar charts showing the macro-level relative importance of each variable across the whole dataset.</li>
+                        <li><b>Right Panel (SHAP Beeswarm):</b> A colored swarm of your actual experiments. Dots pushed to the right (+ SHAP) increased the objective, dots pushed to the left (- SHAP) decreased it. Red dots mean the parameter setting was high, Blue means it was low.</li>
+                    </ul>
+                </li>
                 <li><b>Estimator Tool:</b> Use the sliders at the bottom to predict What-If scenarios. The tool gives you a predicted value and a "Success Score" based on your defined targets.</li>
             </ul>
         </section>
