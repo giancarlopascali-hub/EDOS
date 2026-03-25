@@ -727,4 +727,147 @@ input[type="range"] {
 .flag-good { background: #dcfce7; color: #15803d; }
 .flag-limited { background: #fef9c3; color: #a16207; }
 .flag-poor { background: #fee2e2; color: #b91c1c; }
-
+
+/* ----------------------------------------- */
+/* MOBILE RESPONSIVE LAYOUT (<= 768px Width) */
+/* ----------------------------------------- */
+
+@media (max-width: 768px) {
+    /* Base Typography Reduction */
+    body {
+        padding: 0.5rem 0.25rem;
+        font-size: 13px; /* Reduced by roughly 20-30% from 16px */
+    }
+    h2 { font-size: 1.4rem; }
+    h3 { font-size: 1.1rem; }
+    
+    .container {
+        width: 100%;
+        padding: 0 0.5rem;
+    }
+
+    /* Banner Adjustments */
+    .app-banner {
+        height: 180px;
+    }
+    .banner-overlay {
+        padding: 1rem;
+        justify-content: center;
+        text-align: center;
+    }
+    .banner-text-right {
+        text-align: center;
+        padding: 1rem;
+        background: rgba(0, 0, 0, 0.4);
+    }
+    .banner-text-right h1.banner-title {
+        font-size: 2rem;
+    }
+    .banner-desc {
+        font-size: 0.8rem;
+    }
+
+    /* Grid Layouts to Stacks */
+    .app-grid, .upload-grid, .btn-group {
+        grid-template-columns: 1fr;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    /* Feature Configuration Row Adjustments */
+    .feature-row {
+        flex-direction: column;
+        align-items: stretch;
+        background: var(--bg-color);
+        padding: 0.75rem;
+        border-radius: 12px;
+        margin-bottom: 0.5rem;
+    }
+    .feature-row > * {
+        margin-bottom: 0.5rem;
+        width: 100%;
+    }
+    .feature-row button {
+        align-self: flex-end;
+        width: auto;
+    }
+
+    /* Target inputs for Optimization */
+    .target-inputs {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    /* Table Wrapping & Setup Tabs (Horizontal Scroll for wide content) */
+    .table-container, .tab-content {
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        margin: 1rem 0;
+        padding-bottom: 8px; /* Leave space for scrollbar */
+    }
+    
+    /* Explicit Scrollbar Hints for Mobile */
+    .table-container::-webkit-scrollbar, .tab-content::-webkit-scrollbar, .plot-container::-webkit-scrollbar {
+        height: 8px; /* Force a visible thick scrollbar tracking */
+        background-color: #f1f5f9;
+        border-radius: 4px;
+    }
+    .table-container::-webkit-scrollbar-thumb, .tab-content::-webkit-scrollbar-thumb, .plot-container::-webkit-scrollbar-thumb {
+        background-color: #94a3b8;
+        border-radius: 4px;
+    }
+    
+    table {
+        min-width: 500px; /* Ensure table keeps its readable width inside the scrollable box */
+    }
+
+    /* Plotly Chart Adjustments */
+    .plot-container {
+        min-width: 600px;
+        min-height: 450px;
+        padding-bottom: 10px;
+    }
+
+    /* Touch-friendly buttons */
+    .btn {
+        min-height: 40px; 
+        padding: 0.5rem 1rem;
+        font-size: 0.9rem;
+        width: 100%; /* Full width buttons on mobile */
+        justify-content: center;
+    }
+    
+    /* Touch-friendly inputs */
+    input[type="text"], 
+    input[type="number"], 
+    select {
+        min-height: 40px;
+        font-size: 14px; 
+    }
+
+    /* Card Panels & Plot Scrollers */
+    .card {
+        padding: 1rem;
+        margin-bottom: 1rem;
+        width: 100%;
+        overflow-x: auto; /* Let charts slide without breaking layout */
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Parameter Controls */
+    .parameter-controls {
+        flex-direction: column;
+    }
+    .parameter-item {
+        margin-bottom: 1rem;
+    }
+
+    /* Action Grid inside SA module */
+    .action-grid {
+        grid-template-columns: 1fr;
+    }
+}
