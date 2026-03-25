@@ -1042,23 +1042,103 @@ function renderSAResults(result) {
         const plotId = `sa-impact-${idx}`;
         const plotDiv = document.createElement('div');
         plotDiv.id = plotId;
+        plotDiv.classList.add('plot-container'); // leverage mobile responsive scroller
         plotDiv.style.width = '100%';
-        plotDiv.style.height = '350px';
+        plotDiv.style.height = '450px';
         plotDiv.style.marginBottom = '2rem';
         impactContainer.appendChild(plotDiv);
-
-        Plotly.newPlot(plotId, [{
-            x: xVals,
-            y: yFeats,
-            type: 'bar',
-            orientation: 'h',
-            marker: { color: obj === 'global_success' ? '#FFD700' : 'var(--accent-color)' }
-        }], {
+        
+        const traces = [];
+        const hasShap = res.shap_data && res.shap_data.features && res.shap_data.features.length > 0;
+        
+        let layout = {
             title: `Feature Impact: ${obj}`,
-            xaxis: { title: 'Relative Importance (%)', range: [0, 100] },
-            yaxis: { automargin: true },
-            margin: { l: 150, b: 50, t: 50, r: 50 }
-        });
+            yaxis: { automargin: true, categoryorder: 'array', categoryarray: yFeats },
+            margin: { l: 150, b: 50, t: 50, r: 50 },
+            showlegend: false
+        };
+
+        if (hasShap) {
+            // Left subplot: Bar chart (% Impact)
+            traces.push({
+                x: xVals,
+                y: yFeats,
+                type: 'bar',
+                orientation: 'h',
+                xaxis: 'x',
+                yaxis: 'y',
+                marker: { color: obj === 'global_success' ? '#FFD700' : 'var(--accent-color)' }
+            });
+            
+            // Right subplot: SHAP Beeswarm Scatters
+            const sd = res.shap_data;
+            sd.features.forEach((feat, i) => {
+                const sVals = sd.shap_values[i];
+                const fVals = sd.feature_values[i]; // The raw dataset values to colorize
+                
+                let numericFVals = fVals.map(v => parseFloat(v));
+                let isCategorical = numericFVals.some(isNaN);
+                let colorArray, cmin, cmax, colorscale, reversescale;
+                
+                if (isCategorical) {
+                    const uniqueStr = [...new Set(fVals)];
+                    colorArray = fVals.map(v => uniqueStr.indexOf(v));
+                    colorscale = 'Portland'; 
+                    reversescale = false;
+                } else {
+                    colorArray = numericFVals;
+                    colorscale = 'RdBu';
+                    cmin = Math.min(...colorArray);
+                    cmax = Math.max(...colorArray);
+                    reversescale = true; // Red = high value, Blue = low value natively in SHAP
+                }
+                
+                traces.push({
+                    x: sVals,
+                    y: Array(sVals.length).fill(feat),
+                    mode: 'markers',
+                    type: 'scatter',
+                    xaxis: 'x2',
+                    yaxis: 'y',
+                    marker: {
+                        size: 7,
+                        opacity: 0.6,
+                        color: colorArray,
+                        colorscale: colorscale,
+                        cmin: cmin,
+                        cmax: cmax,
+                        reversescale: reversescale,
+                        line: {width: 0.5, color: '#fff'}
+                    },
+                    customdata: fVals,
+                    hovertemplate: `<b>Feature Value:</b> %{customdata}<br><b>SHAP Impact:</b> %{x:.3f}<extra></extra>`
+                });
+            });
+
+            // Dual axis configuration
+            layout.xaxis = { title: 'Relative Importance (%)', range: [0, 100], domain: [0, 0.42] };
+            layout.xaxis2 = { 
+                title: 'SHAP Value (Impact on prediction)', 
+                domain: [0.52, 1], 
+                zeroline: true, 
+                zerolinecolor: '#94a3b8', 
+                zerolinewidth: 2 
+            };
+            layout.margin.r = 20; 
+            
+        } else {
+            // Fallback for models or states with no valid SHAP payload
+            traces.push({
+                x: xVals,
+                y: yFeats,
+                type: 'bar',
+                orientation: 'h',
+                marker: { color: obj === 'global_success' ? '#FFD700' : 'var(--accent-color)' }
+            });
+            layout.xaxis = { title: 'Relative Importance (%)', range: [0, 100] };
+        }
+
+        Plotly.newPlot(plotId, traces, layout, { responsive: true });
     });
 
     const getFittingSuggestion = (status) => {
