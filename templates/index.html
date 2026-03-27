@@ -47,8 +47,8 @@
         <section id="upload-section" class="card hidden">
             <div id="drop-zone" class="drop-zone">
                 <p>Drag & Drop CSV file here or</p>
-                <button id="file-picker-btn" class="btn secondary">Select File</button>
-                <input type="file" id="file-input" hidden accept=".csv">
+                <label for="file-input" id="file-picker-label" class="btn secondary" style="cursor: pointer; display: inline-block;">Select File</label>
+                <input type="file" id="file-input" style="display: none;" accept=".csv">
             </div>
         </section>
 
@@ -282,7 +282,10 @@
             <!-- SA Results overhauled -->
             <div id="sa-results-container" class="hidden">
                 <section class="card">
-                    <h2>Reliability & Validation</h2>
+                    <div class="card-header">
+                        <h2>Reliability & Validation</h2>
+                        <button id="sa-export-report-btn" class="btn small">Export Analysis Report</button>
+                    </div>
                     <div id="sa-reliability-info"></div>
                 </section>
 
@@ -304,22 +307,37 @@
                 </section>
 
                 <section class="card">
-                    <h2>Feature Impact per Objective</h2>
-                    <p class="text-secondary" style="font-size: 0.9rem; margin-bottom: 1rem;">Relative importance of features for each specific goal.</p>
-                    <div id="sa-impact-container">
-                        <!-- Multiple bar charts will be injected here -->
+                    <h2>Parallel Coordinates</h2>
+                    <p class="text-secondary" style="font-size: 0.9rem; margin-bottom: 0.5rem;">One plot per objective. Each line represents a single experiment, colored by the objective value.</p>                    <p class="text-secondary" style="font-size: 0.85rem; margin-bottom: 1rem;">💡 <b>Tip:</b> Click and drag on any axis to create a <b>filter range</b>. You can apply multiple filters across different axes simultaneously to isolate specific data subsets. Drag a filter to move it, or click the axis again to clear it.</p>
+                    <div id="sa-parcoords-container">
+                        <!-- Parallel coordinates plots injected here -->
                     </div>
                 </section>
 
                 <section class="card">
-                    <h2>Estimator Tool</h2>
-                    <div id="sa-estimator-inputs" class="tweak-grid"></div>
-                    <button id="sa-estimate-btn" class="btn success" style="margin-top: 1rem;">Estimate Objective(s)</button>
-                    <div id="sa-estimate-results" style="margin-top: 1rem; font-weight: 600;"></div>
+                    <h2>Feature Impact</h2>
+                    <div id="sa-results-head" style="margin-bottom: 1rem;">
+                        <!-- Global Success reliability info injected here -->
+                        <div id="sa-reliability-info"></div>
+                    </div>
+                    <div id="sa-impact-container">
+                        <!-- Impact plots injected here -->
+                    </div>
+                </section>
+
+                <section class="card">
+                    <h2>Optimization Outcome - Simulation</h2>
+                    <p class="text-secondary" style="font-size: 0.9rem; margin-bottom: 1.5rem;">Input specific parameter values to estimate the outcome based on the active model.</p>
+                    <div id="sa-estimator-inputs" class="tweaks-grid" style="margin-bottom: 2rem;">
+                        <!-- Inputs injected here -->
+                    </div>
+                    <button id="sa-estimate-btn" class="btn btn-primary" style="width: 100%; padding: 1rem; font-size: 1.1rem; margin-bottom: 1.5rem;">Run Simulation</button>
+                    <div id="sa-estimate-results" class="results-table-container shadow-inner" style="background: #fdfdfd; padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color); min-height: 100px;">
+                        <!-- Results injected here -->
+                    </div>
                 </section>
             </div>
         </div>
-    </div>
     </div>
 
     <div id="loading-overlay" class="hidden">
@@ -327,7 +345,7 @@
         <p id="loading-text">Optimizing...</p>
     </div>
 
-    <script src="{{ url_for('static', filename='app.js') }}"></script>
+    <script src="{{ url_for('static', filename='app_vM.js') }}"></script>
     <script data-goatcounter="https://edos-app.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 </body>
 

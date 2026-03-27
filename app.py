@@ -534,16 +534,22 @@ def run_doe():
                 ortho_score = 100
             
             # 2. D-Efficiency
-            # Standard D-eff = (|X'X|^(1/k)) / N
+            # Standard D-eff = (|X'X|^(1/k)) / N, where X includes the intercept
             try:
                 if model_type == 'lhs':
                     d_eff = "N/A"
                 else:
-                    xtx = np.dot(X.T, X)
+                    # Include intercept for a proper information matrix
+                    X_full = np.column_stack([np.ones(N_runs), X])
+                    k_with_intercept = X_full.shape[1]
+                    xtx = np.dot(X_full.T, X_full)
                     det = np.linalg.det(xtx)
-                    if det > 0:
-                        d_eff = (det**(1.0/k_factors)) / N_runs * 100
+                    
+                    if det > 1e-12:
+                        # Normalize by number of runs and number of parameters
+                        d_eff = (det**(1.0/k_with_intercept)) / N_runs * 100
                     else:
+                        # Fallback for near-singular matrices
                         d_eff = 0
             except:
                 d_eff = 0
@@ -570,17 +576,28 @@ def run_doe():
             else:
                 resolution = "IV (Moderate)"
 
-            
             # 4. Curvature Detection
-            # Check if there are center points (0) or multiple levels
-            levels = len(np.unique(design))
-            has_center = np.any(np.all(np.abs(design) < 0.1, axis=1))
-            if levels > 2 and has_center:
-                curvature = "Excellent"
-            elif levels > 2:
-                curvature = "Partial"
+            # Check if there are multiple levels (more than 2) per numeric factor
+            # and if center points exist (all factors near 0)
+            numeric_cols = [i for i, f in enumerate(valid_features) if f['type'] != 'categorical']
+            if not numeric_cols:
+                curvature = "N/A (Cat. only)"
             else:
-                curvature = "None (Linear only)"
+                has_center = False
+                for r in X:
+                    if np.all(np.abs(r[numeric_cols]) < 0.15):
+                        has_center = True
+                        break
+                
+                # Check levels of the first numeric factor as a proxy
+                levels = len(np.unique(X[:, numeric_cols[0]])) if numeric_cols else 2
+                
+                if levels > 2 and has_center:
+                    curvature = "Excellent"
+                elif levels > 2 or has_center:
+                    curvature = "Partial"
+                else:
+                    curvature = "None (Linear only)"
 
             metrics = {
                 'orthogonality': round(ortho_score, 1) if isinstance(ortho_score, (int, float)) else ortho_score,
