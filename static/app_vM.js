@@ -73,20 +73,25 @@ function initTabs() {
 }
 
 function initFileUpload() {
-    const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input');
-    const filePickerBtn = document.getElementById('file-picker-btn');
-
-    filePickerBtn.addEventListener('click', () => fileInput.click());
-    fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
-
-    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-    dropZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        dropZone.classList.remove('drag-over');
-        handleFiles(e.dataTransfer.files);
+    
+    safeAddListener('file-input', 'change', (e) => {
+        if (e.target.files.length > 0) {
+            handleFiles(e.target.files);
+            e.target.value = ''; // Reset to allow re-selection of same file
+        }
     });
+
+    const dropZone = document.getElementById('drop-zone');
+    if (dropZone) {
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            handleFiles(e.dataTransfer.files);
+        });
+    }
 }
 
 async function handleFiles(files) {
@@ -271,11 +276,16 @@ function rebalanceObjectiveConfigs() {
     const objCols = Object.keys(objectiveConfigs);
     const includedCols = objCols.filter(c => objectiveConfigs[c].included);
     
-    if (includedCols.length === 0) {
-        objCols.forEach(col => objectiveConfigs[col].importance = 0);
-        return;
-    }
+    // First, strictly zero out all non-included objectives
+    objCols.forEach(col => {
+        if (!objectiveConfigs[col].included) {
+            objectiveConfigs[col].importance = (0).toFixed(1);
+        }
+    });
+
+    if (includedCols.length === 0) return;
     
+    // Distribute 100% among included ones
     const total = 1000;
     const share = Math.floor(total / includedCols.length);
     let currentSum = 0;
@@ -284,14 +294,9 @@ function rebalanceObjectiveConfigs() {
         if (idx === includedCols.length - 1) {
             objectiveConfigs[col].importance = ((total - currentSum) / 10).toFixed(1);
         } else {
-            objectiveConfigs[col].importance = (share / 10).toFixed(1);
-            currentSum += share;
-        }
-    });
-
-    objCols.forEach(col => {
-        if (!objectiveConfigs[col].included) {
-            objectiveConfigs[col].importance = 0;
+            const val = share;
+            objectiveConfigs[col].importance = (val / 10).toFixed(1);
+            currentSum += val;
         }
     });
 }
@@ -374,25 +379,34 @@ window.syncObjectiveConfig = (col, sourceModule, field) => {
     const rolePrefix = sourceModule === 'bo' ? 'bo-o' : 'sa-o';
     const row = document.querySelector(`.${rolePrefix}-type[data-col="${col}"]`).closest('tr');
     
-    if (field === 'importance') {
-        const selector = `.${rolePrefix}-importance`;
-        const input = row.querySelector(selector);
-        rebalanceRemaining(col, input.value, selector);
-    } else if (field === 'include' || field === 'type') {
-        rebalanceObjectiveConfigs();
-    }
-
-    // Sync EVERYTHING from DOM to global config to ensure accuracy after rebalance
+    // 1. Sync DOM -> Config FIRST (so rebalance sees correct 'included' flags)
     document.querySelectorAll(`.${rolePrefix}-include`).forEach(cb => {
         const c = cb.dataset.col;
         const r = cb.closest('tr');
         if (objectiveConfigs[c]) {
             objectiveConfigs[c].type = r.querySelector(`.${rolePrefix}-type`).value;
             objectiveConfigs[c].target = r.querySelector(`.${rolePrefix}-target`).value;
-            objectiveConfigs[c].importance = r.querySelector(`.${rolePrefix}-importance`).value;
+            // Only sync importance if we aren't about to auto-rebalance it from scratch
+            if (field === 'importance') {
+                objectiveConfigs[c].importance = r.querySelector(`.${rolePrefix}-importance`).value;
+            }
             objectiveConfigs[c].included = cb.checked;
         }
     });
+
+    // 2. Perform Rebalance logic based on the updated Config
+    if (field === 'importance') {
+        const selector = `.${rolePrefix}-importance`;
+        const val = row.querySelector(selector).value;
+        rebalanceRemaining(col, val, selector);
+        
+        // After DOM-based rebalanceRemaining, sync the derived values back to config
+        document.querySelectorAll(selector).forEach(el => {
+            if (objectiveConfigs[el.dataset.col]) objectiveConfigs[el.dataset.col].importance = el.value;
+        });
+    } else if (field === 'include' || field === 'type') {
+        rebalanceObjectiveConfigs();
+    }
 
     renderSetup();
     if (currentModule === 'bo') renderTrendPlot();
@@ -446,9 +460,15 @@ function renderSASetup() {
     objList.innerHTML = objHtml;
 }
 
+function safeAddListener(id, event, callback) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener(event, callback);
+    else console.warn(`Element with ID "${id}" not found. skipping listener.`);
+}
+
 function initButtons() {
     // DoE manual add
-    document.getElementById('doe-add-feature-btn').addEventListener('click', () => {
+    safeAddListener('doe-add-feature-btn', 'click', () => {
         const list = document.getElementById('doe-features-list');
         const tr = document.createElement('tr');
         tr.innerHTML = `
@@ -464,7 +484,7 @@ function initButtons() {
         attachDeleteEvents();
     });
 
-    document.getElementById('doe-add-objective-btn').addEventListener('click', () => {
+    safeAddListener('doe-add-objective-btn', 'click', () => {
         const list = document.getElementById('doe-objectives-list');
         const count = list.children.length + 1;
         const tr = document.createElement('tr');
@@ -483,11 +503,11 @@ function initButtons() {
         rebalanceDoEDOM();
     });
 
-    document.getElementById('doe-run-btn').addEventListener('click', runDoE);
-    document.getElementById('run-btn').addEventListener('click', runBO);
-    document.getElementById('sa-run-btn').addEventListener('click', runSA);
-    document.getElementById('sa-estimate-btn').addEventListener('click', runEstimate);
-    document.getElementById('shutdown-btn').addEventListener('click', async () => {
+    safeAddListener('doe-run-btn', 'click', runDoE);
+    safeAddListener('run-btn', 'click', runBO);
+    safeAddListener('sa-run-btn', 'click', runSA);
+    safeAddListener('sa-estimate-btn', 'click', runEstimate);
+    safeAddListener('shutdown-btn', 'click', async () => {
         if (confirm('Are you sure you want to shut down the EDOS server?')) {
             try {
                 await fetch('/shutdown', { method: 'POST' });
@@ -501,9 +521,9 @@ function initButtons() {
         }
     });
 
-    document.getElementById('export-main-btn').addEventListener('click', () => exportData(currentData, currentColumns));
+    safeAddListener('export-main-btn', 'click', () => exportData(currentData, currentColumns));
     
-    document.getElementById('commit-suggestions-btn').addEventListener('click', (e) => {
+    safeAddListener('commit-suggestions-btn', 'click', (e) => {
         if (e.target.disabled) return;
         const rows = document.querySelectorAll('#results-table-body tr');
         const featCols = currentColumns.filter(c => columnRoles[c] === 'feature');
@@ -520,7 +540,8 @@ function initButtons() {
             
             objCols.forEach((col, i) => {
                 const cellIdx = featCols.length + i;
-                newRow[currentColumns.indexOf(col)] = cells[cellIdx].textContent.trim();
+                const val = cells[cellIdx].textContent.trim();
+                newRow[currentColumns.indexOf(col)] = (val === 'N/D') ? '' : val;
             });
 
             currentData.push(newRow);
@@ -536,7 +557,7 @@ function initButtons() {
         }
     });
     
-    document.getElementById('doe-export-btn').addEventListener('click', () => {
+    safeAddListener('doe-export-btn', 'click', () => {
         if (!suggestionsData || suggestionsData.length === 0) return;
         const rows = document.querySelectorAll('#doe-results-body tr');
         if (rows.length === 0) return;
@@ -550,7 +571,7 @@ function initButtons() {
         exportData(exportArr, cols);
     });
     
-    document.getElementById('export-results-btn').addEventListener('click', () => {
+    safeAddListener('export-results-btn', 'click', () => {
         if (!suggestionsData || suggestionsData.length === 0) return;
         const rows = document.querySelectorAll('#results-table-body tr');
         if (rows.length === 0) return;
@@ -565,7 +586,7 @@ function initButtons() {
         exportData(exportArr, cols);
     });
 
-    document.getElementById('pareto-export-btn').addEventListener('click', () => {
+    safeAddListener('pareto-export-btn', 'click', () => {
         const objCols = currentColumns.filter(c => columnRoles[c] === 'objective');
         const paretoIndices = detectParetoIndices(currentData, objCols);
         const paretoData = currentData.filter((_, i) => paretoIndices.includes(i));
@@ -583,6 +604,8 @@ function initSettingsListeners() {
     };
     saModel.addEventListener('change', updateSAParamsVisibility);
     updateSAParamsVisibility(); // Init on load
+
+    safeAddListener('sa-export-report-btn', 'click', exportSAReport);
 
     // BO Slider Sync
     const styleSlider = document.getElementById('style-slider');
@@ -866,8 +889,20 @@ async function runBO() {
         commitBtn.style.cursor = allFilled ? 'pointer' : 'not-allowed';
     };
 
+    const allObjCols = currentColumns.filter(c => columnRoles[c] === 'objective');
+    const optimizedCols = objectives.map(o => o.name);
+
     body.innerHTML = suggestionsData.map(row => {
-        return '<tr>' + featCols.map(c => `<td contenteditable="true" class="feat-input-cell editable-cell" style="background:#f8fafc; border: 1px dashed #94a3b8;">${row[c]}</td>`).join('') + objCols.map(() => `<td contenteditable="true" class="obj-input-cell editable-cell" style="background:#f0fdf4; border: 1px dashed #22c55e;"></td>`).join('') + '</tr>';
+        const fCells = featCols.map(c => `<td contenteditable="true" class="feat-input-cell editable-cell" style="background:#f8fafc; border: 1px dashed #94a3b8;">${row[c]}</td>`).join('');
+        const oCells = allObjCols.map(c => {
+            const isOptimized = optimizedCols.includes(c);
+            const content = isOptimized ? '' : 'N/D';
+            const style = isOptimized 
+                ? 'background:#f0fdf4; border: 1px dashed #22c55e;' 
+                : 'background:#f1f5f9; border: 1px dashed #94a3b8; color: #64748b; font-style: italic;';
+            return `<td contenteditable="true" class="obj-input-cell editable-cell" style="${style}">${content}</td>`;
+        }).join('');
+        return '<tr>' + fCells + oCells + '</tr>';
     }).join('');
     
     // Add input listeners for real-time validation
@@ -906,6 +941,10 @@ async function runSA() {
             target: tr.querySelector('.sa-o-target').value,
             importance: tr.querySelector('.sa-o-importance').value
         }));
+    
+    // Store SA objectives for use in rendering plots
+    window.saSelectedObjectives = objectives.map(o => o.name);
+    
     const tweaks = {
         model: document.getElementById('sa-model-select').value,
         params: {
@@ -933,6 +972,7 @@ async function runSA() {
         const result = await res.json();
         document.getElementById('loading-overlay').classList.add('hidden');
         if (result.error) return alert("SA Error: " + result.error);
+        window.lastSAResult = result;
         renderSAResults(result);
     } catch(err) {
         document.getElementById('loading-overlay').classList.add('hidden');
@@ -1026,6 +1066,95 @@ function renderSAResults(result) {
         catContainer.innerHTML = '<p class="text-secondary"><i>No categorical interactions possible (requires 2+ categorical features).</i></p>';
     }
 
+    // --- Render Parallel Coordinates Plots (one per objective) ---
+    const parcoordsContainer = document.getElementById('sa-parcoords-container');
+    parcoordsContainer.innerHTML = '';
+
+    // Build the raw dataset: features + objectives for every experiment
+    const featCols = (window.saSelectedFeatures || currentColumns.filter(c => columnRoles[c] === 'feature'));
+    const objCols = (window.saSelectedObjectives || currentColumns.filter(c => columnRoles[c] === 'objective'));
+
+    if (featCols.length > 0 && objCols.length > 0 && currentData.length > 0) {
+
+        objCols.forEach((objCol, idx) => {
+            // Each plot: all features + only its own objective axis
+            const plotCols = [...featCols, objCol];
+
+            // Build the dimensions array for Plotly parcoords
+            const dimensions = plotCols.map(col => {
+                const colIdx = currentColumns.indexOf(col);
+                const rawVals = currentData.map(r => r[colIdx]);
+
+                // Detect if categorical (any non-numeric value)
+                const numVals = rawVals.map(v => parseFloat(v));
+                const isCat = numVals.some(isNaN);
+
+                if (isCat) {
+                    const uniqueVals = [...new Set(rawVals.filter(v => v !== '' && v !== null))];
+                    const mappedVals = rawVals.map(v => uniqueVals.indexOf(v) >= 0 ? uniqueVals.indexOf(v) : 0);
+                    return {
+                        label: col,
+                        values: mappedVals,
+                        tickvals: uniqueVals.map((_, i) => i),
+                        ticktext: uniqueVals
+                    };
+                } else {
+                    return {
+                        label: col,
+                        values: numVals.map(v => isNaN(v) ? 0 : v)
+                    };
+                }
+            });
+
+            // Color by the objective column for this plot
+            const objIdx = currentColumns.indexOf(objCol);
+            const colorVals = currentData.map(r => parseFloat(r[objIdx]) || 0);
+
+            const pcDiv = document.createElement('div');
+            pcDiv.id = `sa-parcoords-${idx}`;
+            pcDiv.classList.add('plot-container');
+            pcDiv.style.width = '100%';
+            pcDiv.style.height = '420px';
+            pcDiv.style.marginBottom = '2rem';
+            parcoordsContainer.appendChild(pcDiv);
+
+            const finiteColorVals = colorVals.filter(v => isFinite(v));
+            const cmin = finiteColorVals.length > 0 ? Math.min(...finiteColorVals) : 0;
+            const cmax = finiteColorVals.length > 0 ? Math.max(...finiteColorVals) : 1;
+
+            const pcPlot = Plotly.newPlot(`sa-parcoords-${idx}`, [{
+                type: 'parcoords',
+                line: {
+                    color: colorVals,
+                    colorscale: [
+                        [0, '#0d0887'], [0.11, '#46039f'], [0.22, '#7201a8'], [0.33, '#9c179e'], 
+                        [0.44, '#bd3786'], [0.55, '#d8576b'], [0.66, '#ed7953'], [0.77, '#fb9f3a'], 
+                        [0.88, '#fdca26'], [1, '#f0f921']
+                    ],
+                    showscale: true,
+                    reversescale: false,
+                    opacity: 0.85,
+                    cmin: cmin,
+                    cmax: cmax,
+                    colorbar: { title: objCol, thickness: 15 }
+                },
+                unselected: {
+                    line: {
+                        opacity: 0,
+                        color: 'rgba(0,0,0,0)'
+                    }
+                },
+                dimensions: dimensions
+            }], {
+                title: `Parallel Coordinates — Colored by: ${objCol}`,
+                margin: { l: 80, r: 80, t: 120, b: 20 }
+            }, { responsive: true });
+
+        });
+    } else {
+        parcoordsContainer.innerHTML = '<p class="text-secondary"><i>Parallel coordinates require at least one feature and one objective with experiments loaded.</i></p>';
+    }
+
     // --- Render Individual Feature Impact Plots ---
     const impactContainer = document.getElementById('sa-impact-container');
     impactContainer.innerHTML = '';
@@ -1039,42 +1168,70 @@ function renderSAResults(result) {
         const yFeats = sortedEntries.map(e => e[0]);
         const xVals = sortedEntries.map(e => e[1]);
 
-        const plotId = `sa-impact-${idx}`;
-        const plotDiv = document.createElement('div');
-        plotDiv.id = plotId;
-        plotDiv.classList.add('plot-container'); // leverage mobile responsive scroller
-        plotDiv.style.width = '100%';
-        plotDiv.style.height = '450px';
-        plotDiv.style.marginBottom = '2rem';
-        impactContainer.appendChild(plotDiv);
+        // Create a flex container for two side-by-side plots
+        const container = document.createElement('div');
+        container.classList.add('impact-row');
+        container.style.display = 'flex';
+        container.style.flexWrap = 'wrap';
+        container.style.gap = '15px';
+        container.style.marginBottom = '2.5rem';
+        container.style.padding = '1rem';
+        container.style.background = '#f8fafc';
+        container.style.borderRadius = '12px';
+        container.style.border = '1px solid #e2e8f0';
         
-        const traces = [];
+        const titleDiv = document.createElement('h3');
+        titleDiv.textContent = `Feature Impact: ${obj}`;
+        titleDiv.style.width = '100.0%';
+        titleDiv.style.margin = '0 0 1rem 0';
+        container.appendChild(titleDiv);
+
+        const barId = `sa-bar-${idx}`;
+        const barDiv = document.createElement('div');
+        barDiv.id = barId;
+        barDiv.style.flex = '1';
+        barDiv.style.minWidth = '350px';
+        barDiv.style.height = '400px';
+        container.appendChild(barDiv);
+
+        const shapId = `sa-shap-${idx}`;
+        const shapDiv = document.createElement('div');
+        shapDiv.id = shapId;
+        shapDiv.style.flex = '1.3';
+        shapDiv.style.minWidth = '450px';
+        shapDiv.style.height = '400px';
+        container.appendChild(shapDiv);
+
+        impactContainer.appendChild(container);
+        
         const hasShap = res.shap_data && res.shap_data.features && res.shap_data.features.length > 0;
         
-        let layout = {
-            title: `Feature Impact: ${obj}`,
-            yaxis: { automargin: true, categoryorder: 'array', categoryarray: yFeats },
-            margin: { l: 150, b: 50, t: 50, r: 50 },
-            showlegend: false
+        // 1. Bar Chart Trace
+        const barTraces = [{
+            x: xVals,
+            y: yFeats,
+            type: 'bar',
+            orientation: 'h',
+            marker: { color: obj === 'global_success' ? '#FFD700' : 'var(--accent-color)' }
+        }];
+        
+        const barLayout = {
+            xaxis: { title: 'Importance (%)', range: [0, 100] },
+            yaxis: { automargin: true },
+            margin: { l: 120, b: 50, t: 20, r: 20 },
+            showlegend: false,
+            height: 400
         };
 
+        Plotly.newPlot(barId, barTraces, barLayout, { responsive: true });
+
         if (hasShap) {
-            // Left subplot: Bar chart (% Impact)
-            traces.push({
-                x: xVals,
-                y: yFeats,
-                type: 'bar',
-                orientation: 'h',
-                xaxis: 'x',
-                yaxis: 'y',
-                marker: { color: obj === 'global_success' ? '#FFD700' : 'var(--accent-color)' }
-            });
-            
-            // Right subplot: SHAP Beeswarm Scatters
+            // 2. SHAP Beeswarm Plot
+            const shapTraces = [];
             const sd = res.shap_data;
             sd.features.forEach((feat, i) => {
                 const sVals = sd.shap_values[i];
-                const fVals = sd.feature_values[i]; // The raw dataset values to colorize
+                const fVals = sd.feature_values[i];
                 
                 let numericFVals = fVals.map(v => parseFloat(v));
                 let isCategorical = numericFVals.some(isNaN);
@@ -1083,62 +1240,43 @@ function renderSAResults(result) {
                 if (isCategorical) {
                     const uniqueStr = [...new Set(fVals)];
                     colorArray = fVals.map(v => uniqueStr.indexOf(v));
-                    colorscale = 'Portland'; 
-                    reversescale = false;
+                    colorscale = 'Portland'; reversescale = false;
                 } else {
-                    colorArray = numericFVals;
-                    colorscale = 'RdBu';
-                    cmin = Math.min(...colorArray);
-                    cmax = Math.max(...colorArray);
-                    reversescale = true; // Red = high value, Blue = low value natively in SHAP
+                    colorArray = numericFVals; colorscale = 'RdBu';
+                    cmin = Math.min(...colorArray); cmax = Math.max(...colorArray);
+                    reversescale = true;
                 }
                 
-                traces.push({
+                const yBase = yFeats.indexOf(feat);
+                shapTraces.push({
                     x: sVals,
-                    y: Array(sVals.length).fill(feat),
+                    y: sVals.map(() => yBase + (Math.random() - 0.5) * 0.4),
                     mode: 'markers',
                     type: 'scatter',
-                    xaxis: 'x2',
-                    yaxis: 'y',
                     marker: {
-                        size: 7,
-                        opacity: 0.6,
-                        color: colorArray,
-                        colorscale: colorscale,
-                        cmin: cmin,
-                        cmax: cmax,
-                        reversescale: reversescale,
-                        line: {width: 0.5, color: '#fff'}
+                        size: 7, opacity: 0.6, color: colorArray,
+                        colorscale: colorscale, cmin: cmin, cmax: cmax,
+                        reversescale: reversescale, line: {width: 0.5, color: '#fff'}
                     },
                     customdata: fVals,
-                    hovertemplate: `<b>Feature Value:</b> %{customdata}<br><b>SHAP Impact:</b> %{x:.3f}<extra></extra>`
+                    hovertemplate: `<b>Value:</b> %{customdata}<br><b>Impact:</b> %{x:.3f}<extra></extra>`
                 });
             });
-
-            // Dual axis configuration
-            layout.xaxis = { title: 'Relative Importance (%)', range: [0, 100], domain: [0, 0.42] };
-            layout.xaxis2 = { 
-                title: 'SHAP Value (Impact on prediction)', 
-                domain: [0.52, 1], 
-                zeroline: true, 
-                zerolinecolor: '#94a3b8', 
-                zerolinewidth: 2 
-            };
-            layout.margin.r = 20; 
             
+            const shapLayout = {
+                xaxis: { title: 'SHAP Value (Impact)', zeroline: true, zerolinecolor: '#94a3b8' },
+                yaxis: { 
+                    showticklabels: false, // hide since they match the bar chart
+                    range: [-0.5, yFeats.length - 0.5]
+                },
+                margin: { l: 20, b: 50, t: 20, r: 20 },
+                showlegend: false,
+                height: 400
+            };
+            Plotly.newPlot(shapId, shapTraces, shapLayout, { responsive: true });
         } else {
-            // Fallback for models or states with no valid SHAP payload
-            traces.push({
-                x: xVals,
-                y: yFeats,
-                type: 'bar',
-                orientation: 'h',
-                marker: { color: obj === 'global_success' ? '#FFD700' : 'var(--accent-color)' }
-            });
-            layout.xaxis = { title: 'Relative Importance (%)', range: [0, 100] };
+            shapDiv.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#94a3b8;">No SHAP data available for this model.</div>';
         }
-
-        Plotly.newPlot(plotId, traces, layout, { responsive: true });
     });
 
     const getFittingSuggestion = (status) => {
@@ -1216,13 +1354,15 @@ async function runEstimate() {
     const featList = (window.saSelectedFeatures || currentColumns.filter(c => columnRoles[c] === 'feature'))
         .map(c => ({name: c, range: 'x'}));
     
-    // Use the SA-configured objectives
-    const objList = Array.from(document.querySelectorAll('#sa-objectives-list tr')).map(tr => ({
-        name: tr.querySelector('.sa-o-type').dataset.col,
-        type: tr.querySelector('.sa-o-type').value,
-        target: tr.querySelector('.sa-o-target').value,
-        importance: tr.querySelector('.sa-o-importance').value
-    }));
+    // Use the SA-configured objectives - ONLY those included
+    const objList = Array.from(document.querySelectorAll('#sa-objectives-list tr'))
+        .filter(tr => tr.querySelector('.sa-o-include').checked)
+        .map(tr => ({
+            name: tr.querySelector('.sa-o-type').dataset.col,
+            type: tr.querySelector('.sa-o-type').value,
+            target: tr.querySelector('.sa-o-target').value,
+            importance: tr.querySelector('.sa-o-importance').value
+        }));
     
     document.getElementById('sa-estimate-results').innerHTML = '<div style="color: var(--text-secondary); animation: pulse 1.5s infinite;"><i>Calculating predictions...</i></div>';
 
@@ -1269,7 +1409,7 @@ async function runEstimate() {
 
 function renderTrendPlot() {
     if (!currentData || currentData.length === 0) return;
-    const objCols = currentColumns.filter(c => columnRoles[c] === 'objective' && (objectiveConfigs[c] ? objectiveConfigs[c].included : true));
+    const objCols = currentColumns.filter(c => columnRoles[c] === 'objective');
     
     const traces = objCols.map(col => {
         const colIdx = currentColumns.indexOf(col);
@@ -1303,7 +1443,7 @@ function renderTrendPlot() {
     document.getElementById('bo-visuals').classList.remove('hidden');
     
     const layout = { 
-        title: 'Objectives Trend',
+        title: objCols.length === 1 ? `Trend: ${objCols[0]}` : 'Objectives Trend',
         autosize: true,
         height: 400,
         margin: { l: 60, r: 40, t: 80, b: 60 },
@@ -1551,4 +1691,221 @@ async function exportData(data, columns) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = 'export.csv'; a.click();
+}
+
+async function exportSAReport() {
+    const overlay = document.getElementById('loading-overlay');
+    document.getElementById('loading-text').textContent = "Generating Dynamic Report...";
+    overlay.classList.remove('hidden');
+
+    try {
+        const timestamp = new Date().toLocaleString();
+        const activeModel = document.getElementById('sa-model-select').options[document.getElementById('sa-model-select').selectedIndex].text;
+        
+        // 1. Collect all Plotly data from active plots
+        const plotsData = [];
+        const capturePlot = (id, title) => {
+            const el = document.getElementById(id);
+            if (!el || !el.data) return;
+            plotsData.push({ id, title, data: el.data, layout: el.layout });
+        };
+
+        capturePlot('sa-num-corr', 'Numerical Correlation Matrix');
+        
+        document.querySelectorAll('[id^="sa-parcoords-"]').forEach(el => {
+            const title = el.layout?.title?.text || el.layout?.title || 'Parallel Coordinates';
+            capturePlot(el.id, title);
+        });
+
+        document.querySelectorAll('[id^="sa-bar-"], [id^="sa-shap-"]').forEach(el => {
+            const title = el.layout?.title?.text || el.layout?.title || 'Feature Impact';
+            capturePlot(el.id, title);
+        });
+
+        const reliabilityHtml = document.getElementById('sa-reliability-info').innerHTML;
+        const catInteractions = window.lastSAResult ? window.lastSAResult.cat_interactions : {};
+        const objNames = window.lastSAResult ? window.lastSAResult.extended_obj_names : [];
+
+        let reportHtml = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>EDOS Analysis Report - ${timestamp}</title>
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; color: #1e293b; background: #f8fafc; max-width: 1200px; margin: 40px auto; line-height: 1.6; padding: 0 20px; }
+        .card { background: white; border-radius: 12px; border: 1px solid #e2e8f0; padding: 25px; margin-bottom: 30px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .header { border-bottom: 2px solid #3b82f6; padding-bottom: 20px; margin-bottom: 40px; display: flex; justify-content: space-between; align-items: flex-end; }
+        h1 { color: #0f172a; margin: 0; font-size: 2.2rem; }
+        .meta { color: #64748b; font-size: 0.95rem; text-align: right; }
+        h2 { color: #1e293b; margin-top: 0; border-left: 5px solid #3b82f6; padding-left: 15px; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th { background: #f1f5f9; text-align: left; padding: 12px; border: 1px solid #e2e8f0; font-weight: 600; }
+        td { padding: 12px; border: 1px solid #e2e8f0; }
+        .badge { padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }
+        .good { background: #dcfce7; color: #166534; }
+        .limited { background: #fef9c3; color: #854d0e; }
+        .poor { background: #fee2e2; color: #991b1b; }
+        .impact-group { display: flex; flex-wrap: wrap; gap: 20px; }
+        .plot-box { flex: 1; min-width: 450px; height: 450px; }
+        .full-plot { width: 100%; height: 500px; }
+        .controls { display: flex; gap: 15px; margin-bottom: 20px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; }
+        .tweak-item { flex: 1; display: flex; flex-direction: column; gap: 5px; }
+        select { padding: 8px; border-radius: 6px; border: 1px solid #cbd5e1; background: white; font-family: inherit; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>EDOS Analysis Report</h1>
+            <p style="margin: 5px 0 0 0; color: #64748b;">Statistical Analysis Model Results</p>
+        </div>
+        <div class="meta">
+            <b>Model:</b> ${activeModel}<br>
+            <b>Date:</b> ${timestamp}
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Model Reliability & Validation</h2>
+        ${reliabilityHtml}
+    </div>
+
+    <div class="card" id="num-corr-section" style="display:none;">
+        <h2>Numerical Correlation Matrix</h2>
+        <div id="sa-num-corr" class="full-plot"></div>
+    </div>
+
+    <div class="card" id="cat-section" style="display:none;">
+        <h2>Categorical Interaction Analysis</h2>
+        <div class="controls">
+            <div class="tweak-item">
+                <label>Select Pair:</label>
+                <select id="report-cat-pair">
+                    ${Object.keys(catInteractions).map(p => `<option value="${p}">${p}</option>`).join('')}
+                </select>
+            </div>
+            <div class="tweak-item">
+                <label>Select Objective:</label>
+                <select id="report-cat-obj">
+                    ${objNames.map(o => `<option value="${o}">${o}</option>`).join('')}
+                </select>
+            </div>
+        </div>
+        <div id="sa-cat-interactions-container" class="full-plot"></div>
+    </div>
+
+    <div id="parcoords-section"></div>
+    <div id="impact-section"></div>
+
+    <script>
+        const plotsData = ${JSON.stringify(plotsData)};
+        const catInteractions = ${JSON.stringify(catInteractions)};
+        
+        // 1. Render Specific Plots (Correlation)
+        const corrPlot = plotsData.find(p => p.id === 'sa-num-corr');
+        if (corrPlot) {
+            document.getElementById('num-corr-section').style.display = 'block';
+            Plotly.newPlot('sa-num-corr', corrPlot.data, corrPlot.layout, { responsive: true });
+        }
+
+        // 2. Render Categorical Interaction (Dynamic)
+        if (Object.keys(catInteractions).length > 0) {
+            document.getElementById('cat-section').style.display = 'block';
+            
+            const updateCatPlot = () => {
+                const pair = document.getElementById('report-cat-pair').value;
+                const obj = document.getElementById('report-cat-obj').value;
+                const data = (catInteractions[pair] || {})[obj];
+                if (!data) return;
+                
+                const trace = {
+                    z: data.z, x: data.x, y: data.y,
+                    type: 'heatmap', colorscale: 'RdBu', zmin: 0, zmax: 1
+                };
+                const layout = {
+                    title: \`Optimal Outcome: \${obj}\`,
+                    xaxis: { title: pair.split(' vs ')[1], automargin: true },
+                    yaxis: { title: pair.split(' vs ')[0], automargin: true },
+                    margin: { l: 150, b: 80, t: 50, r: 50 },
+                    height: 500
+                };
+                Plotly.newPlot('sa-cat-interactions-container', [trace], layout, { responsive: true });
+            };
+            
+            document.getElementById('report-cat-pair').addEventListener('change', updateCatPlot);
+            document.getElementById('report-cat-obj').addEventListener('change', updateCatPlot);
+            updateCatPlot();
+        }
+
+        // 3. Render ParCoords list
+        const pcSection = document.getElementById('parcoords-section');
+        const pcPlots = plotsData.filter(p => p.id.startsWith('sa-parcoords'));
+        if (pcPlots.length > 0) {
+            const head = document.createElement('h2');
+            head.textContent = 'Parallel Coordinates Analysis';
+            pcSection.appendChild(head);
+            pcPlots.forEach(p => {
+                const div = document.createElement('div');
+                div.id = p.id;
+                div.className = 'card full-plot';
+                pcSection.appendChild(div);
+                Plotly.newPlot(p.id, p.data, p.layout, { responsive: true });
+            });
+        }
+
+        // 4. Render Impact Groups
+        const impactSection = document.getElementById('impact-section');
+        const barPlots = plotsData.filter(p => p.id.startsWith('sa-bar'));
+        if (barPlots.length > 0) {
+            const head = document.createElement('h2');
+            head.textContent = 'Feature Impact Analysis';
+            impactSection.appendChild(head);
+            barPlots.forEach((p, idx) => {
+                const group = document.createElement('div');
+                group.className = 'card';
+                group.innerHTML = '<h3>' + (p.layout.title?.text || p.layout.title || 'Feature Impact Group') + '</h3><div class="impact-group"></div>';
+                const container = group.querySelector('.impact-group');
+                
+                const barDiv = document.createElement('div');
+                barDiv.id = p.id;
+                barDiv.className = 'plot-box';
+                container.appendChild(barDiv);
+                
+                const shapPlot = plotsData.find(pd => pd.id === 'sa-shap-' + p.id.split('-')[2]);
+                if (shapPlot) {
+                    const shapDiv = document.createElement('div');
+                    shapDiv.id = shapPlot.id;
+                    shapDiv.className = 'plot-box';
+                    container.appendChild(shapDiv);
+                }
+                
+                impactSection.appendChild(group);
+                Plotly.newPlot(p.id, p.data, p.layout, { responsive: true });
+                if (shapPlot) {
+                  const finalLayout = Object.assign({}, shapPlot.layout);
+                  finalLayout.yaxis = Object.assign({}, finalLayout.yaxis, {showticklabels: true});
+                  Plotly.newPlot(shapPlot.id, shapPlot.data, finalLayout, { responsive: true });
+                }
+            });
+        }
+    </script>
+</body>
+</html>`;
+
+        const blob = new Blob([reportHtml], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `EDOS_Report_${new Date().toISOString().slice(0,10)}.html`;
+        a.click();
+        
+    } catch (err) {
+        alert("Dynamic report generation failed: " + err.message);
+        console.error(err);
+    } finally {
+        overlay.classList.add('hidden');
+    }
 }
