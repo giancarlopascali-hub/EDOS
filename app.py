@@ -998,8 +998,8 @@ if __name__ == '__main__':
     import os
     port = int(os.environ.get("PORT", 7860))
     
-    # Only open browser if running locally on default port
-    if port == 5000:
+    # Open browser automatically if running as a standalone app or if PORT is not set
+    if getattr(sys, 'frozen', False) or os.environ.get("PORT") is None:
         import threading
         import webbrowser
         def open_browser():
