@@ -1000,6 +1000,7 @@ if __name__ == '__main__':
     
     # Open browser automatically if running as a standalone app or if PORT is not set
     if getattr(sys, 'frozen', False) or os.environ.get("PORT") is None:
+        print(f"Standalone mode detected. Attempting to open browser on port {port}...")
         import threading
         import webbrowser
         def open_browser():
