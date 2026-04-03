@@ -159,6 +159,30 @@
 
             <section class="card">
                 <h2>BO Setup</h2>
+                
+                <!-- Optimization Strategy Toggle -->
+                <div id="bo-strategy-container" style="margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1.25rem;">
+                    <label style="font-weight: 600; display: block; margin-bottom: 0.75rem; color: var(--text-primary); font-size: 0.95rem;">Optimization Strategy</label>
+                    <div style="display: flex; gap: 2rem;">
+                        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem;">
+                            <input type="radio" name="bo-strategy" value="gradient_based" checked style="width: auto;">
+                            <span>Gradient-based (Default)</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem;">
+                            <input type="radio" name="bo-strategy" value="exhaustive_grid" style="width: auto;">
+                            <span>Exhaustive Grid (EDBO+)</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Warning Banner for Auto-reclassification -->
+                <div id="bo-warning-banner" class="hidden" style="background: #fffbeb; border: 1px solid #fde68a; color: #92400e; padding: 1rem; border-radius: 12px; margin-bottom: 1.5rem; font-size: 0.85rem; line-height: 1.4;">
+                    <div style="display: flex; gap: 0.75rem; align-items: flex-start;">
+                        <span style="font-size: 1.2rem;">⚠️</span>
+                        <div id="bo-warning-text"></div>
+                    </div>
+                </div>
+
                 <div class="setup-tabs">
                     <button class="tab-btn active" data-tab="bo-features-tab">Features</button>
                     <button class="tab-btn" data-tab="bo-objectives-tab">Objectives</button>

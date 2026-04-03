@@ -9,6 +9,8 @@ let currentData = null;      // Full dataset loaded from CSV (Array of Arrays)
 let currentColumns = [];     // Column names (Array of Strings)
 let columnRoles = {};        // Mapping of column names to roles: 'feature' or 'objective'
 let objectiveConfigs = {};   // Global store for objective types/targets
+let boFeatureConfigs = {};   // Persistent store for BO feature types/ranges
+let saFeatureConfigs = {};   // Persistent store for SA feature definitions
 let suggestionsData = null;  // Latest results from the optimizer/generator
 
 // --- Initialization ---
@@ -29,7 +31,75 @@ document.addEventListener('DOMContentLoaded', () => {
     initTabs();
     initButtons();
     initSettingsListeners();
+    initStrategyToggle();
 });
+
+function initStrategyToggle() {
+    const radios = document.querySelectorAll('input[name="bo-strategy"]');
+    radios.forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            const strategy = e.target.value;
+            const banner = document.getElementById('bo-warning-banner');
+            const warningText = document.getElementById('bo-warning-text');
+            const noiselessCb = document.getElementById('bo-noiseless');
+            const avoidRevalCb = document.getElementById('bo-avoid-reval');
+            let reclassified = [];
+
+            if (strategy === 'exhaustive_grid') {
+                // Disable irrelevant tweaks
+                if (noiselessCb) { noiselessCb.disabled = true; noiselessCb.closest('.tweak-item').style.opacity = '0.5'; }
+                if (avoidRevalCb) { avoidRevalCb.disabled = true; avoidRevalCb.closest('.tweak-item').style.opacity = '0.5'; }
+
+                document.querySelectorAll('.bo-f-type').forEach(select => {
+                    if (select.value === 'continuous') {
+                        const col = select.dataset.col;
+                        const tr = select.closest('tr');
+                        const rangeInput = tr.querySelector('.bo-f-range');
+                        
+                        select.value = 'regular';
+                        let val = rangeInput.value.trim();
+                        if (val.includes('[') && val.includes(']')) {
+                            if (!val.match(/\]\d+/)) rangeInput.value = val + "10";
+                        } else {
+                            const matches = val.match(/[-+]?\d*\.?\d+/g);
+                            if (matches && matches.length >= 2) rangeInput.value = `[${matches[0]}, ${matches[1]}]10`;
+                        }
+                        
+                        // Sync to global state
+                        syncBOFeatureConfig(col, 'type');
+                        syncBOFeatureConfig(col, 'range');
+                        reclassified.push(col);
+                    }
+                });
+                
+                if (reclassified.length > 0) {
+                    banner.classList.remove('hidden');
+                    warningText.innerHTML = `**Exhaustive Grid selected:** ${reclassified.join(', ')} reclassified as **Regular** (10 steps) to define the search space.`;
+                }
+            } else {
+                // Enable tweaks
+                if (noiselessCb) { noiselessCb.disabled = false; noiselessCb.closest('.tweak-item').style.opacity = '1'; }
+                if (avoidRevalCb) { avoidRevalCb.disabled = false; avoidRevalCb.closest('.tweak-item').style.opacity = '1'; }
+
+                document.querySelectorAll('.bo-f-type').forEach(select => {
+                    if (select.value === 'regular') {
+                        const col = select.dataset.col;
+                        const tr = select.closest('tr');
+                        const rangeInput = tr.querySelector('.bo-f-range');
+                        
+                        select.value = 'continuous';
+                        rangeInput.value = rangeInput.value.replace(/\]\d+$/, ']');
+                        
+                        syncBOFeatureConfig(col, 'type');
+                        syncBOFeatureConfig(col, 'range');
+                        reclassified.push(col);
+                    }
+                });
+                banner.classList.add('hidden');
+            }
+        });
+    });
+}
 
 function initModuleSwitcher() {
     document.querySelectorAll('.module-btn').forEach(btn => {
@@ -127,6 +197,29 @@ async function handleFiles(files) {
             };
         });
 
+        // Initialize persistent feature configs
+        boFeatureConfigs = {};
+        saFeatureConfigs = {};
+        currentColumns.forEach((col, idx) => {
+            if (columnRoles[col] === 'feature') {
+                const vals = currentData.map(r => r[idx]).filter(v => v != null && v !== '');
+                const isNum = vals.every(v => !isNaN(parseFloat(v)));
+                const min = vals.length ? Math.min(...vals.map(v => parseFloat(v))) : 0;
+                const max = vals.length ? Math.max(...vals.map(v => parseFloat(v))) : 1;
+                const range = isNum ? `[${min}, ${max}]` : [...new Set(vals)].join(', ');
+
+                boFeatureConfigs[col] = {
+                    type: isNum ? 'continuous' : 'categorical',
+                    range: range,
+                    included: true
+                };
+                saFeatureConfigs[col] = {
+                    type: isNum ? 'continuous' : 'categorical',
+                    included: true
+                };
+            }
+        });
+
         renderMainTable();
         renderSetup();
         if (currentModule === 'bo') renderTrendPlot();
@@ -169,8 +262,31 @@ window.updateCellData = (rowIdx, colIdx, value) => {
 };
 
 window.toggleColumnRole = (colName) => {
-    columnRoles[colName] = columnRoles[colName] === 'feature' ? 'objective' : 'feature';
+    const oldRole = columnRoles[colName];
+    const newRole = oldRole === 'feature' ? 'objective' : 'feature';
+    columnRoles[colName] = newRole;
     
+    if (newRole === 'feature') {
+        // Initialize feature configs if not already present
+        const idx = currentColumns.indexOf(colName);
+        const vals = currentData.map(r => r[idx]).filter(v => v != null && v !== '');
+        const isNum = vals.every(v => !isNaN(parseFloat(v)));
+        const min = vals.length ? Math.min(...vals.map(v => parseFloat(v))) : 0;
+        const max = vals.length ? Math.max(...vals.map(v => parseFloat(v))) : 1;
+        const range = isNum ? `[${min}, ${max}]` : [...new Set(vals)].join(', ');
+
+        if (!boFeatureConfigs[colName]) {
+            boFeatureConfigs[colName] = { type: isNum ? 'continuous' : 'categorical', range: range, included: true };
+        }
+        if (!saFeatureConfigs[colName]) {
+            saFeatureConfigs[colName] = { type: isNum ? 'continuous' : 'categorical', included: true };
+        }
+    } else {
+        // Clean up feature configs if it's now an objective
+        delete boFeatureConfigs[colName];
+        delete saFeatureConfigs[colName];
+    }
+
     const activeObjs = currentColumns.filter(c => columnRoles[c] === 'objective');
     
     // Ensure all active objectives are in objectiveConfigs
@@ -335,20 +451,18 @@ function renderBOSetup() {
     
     let featuresHtml = '';
     currentColumns.filter(col => columnRoles[col] === 'feature').forEach(col => {
-        const colIdx = currentColumns.indexOf(col);
-        const vals = currentData.map(r => r[colIdx]).filter(v => v != null);
-        const isNum = vals.every(v => !isNaN(parseFloat(v)));
-        const range = isNum ? `[${Math.min(...vals)}, ${Math.max(...vals)}]` : [...new Set(vals)].join(', ');
-
+        const cfg = boFeatureConfigs[col] || { type: 'continuous', range: '', included: true };
+        
         featuresHtml += `<tr>
             <td>${col}</td>
-            <td><select class="bo-f-type" data-col="${col}">
-                <option value="continuous" ${isNum ? 'selected' : ''}>continuous</option>
-                <option value="discrete">discrete</option>
-                <option value="categorical" ${!isNum ? 'selected' : ''}>categorical</option>
+            <td><select class="bo-f-type" data-col="${col}" onchange="syncBOFeatureConfig('${col}', 'type')">
+                <option value="continuous" ${cfg.type === 'continuous' ? 'selected' : ''}>continuous</option>
+                <option value="regular" ${cfg.type === 'regular' ? 'selected' : ''}>regular</option>
+                <option value="discrete" ${cfg.type === 'discrete' ? 'selected' : ''}>discrete</option>
+                <option value="categorical" ${cfg.type === 'categorical' ? 'selected' : ''}>categorical</option>
             </select></td>
-            <td><input type="text" class="bo-f-range" data-col="${col}" value="${range}"></td>
-            <td><input type="checkbox" class="bo-f-include" data-col="${col}" checked></td>
+            <td><input type="text" class="bo-f-range" data-col="${col}" value="${cfg.range}" placeholder="[min, max] or [min, max]steps" onchange="syncBOFeatureConfig('${col}', 'range')"></td>
+            <td><input type="checkbox" class="bo-f-include" data-col="${col}" ${cfg.included ? 'checked' : ''} onchange="syncBOFeatureConfig('${col}', 'include')"></td>
         </tr>`;
     });
     featuresList.innerHTML = featuresHtml;
@@ -374,24 +488,47 @@ function renderBOSetup() {
     updateAcqSelectForMultiObj();
 }
 
+window.syncBOFeatureConfig = (col, field) => {
+    const tr = document.querySelector(`.bo-f-type[data-col="${col}"]`)?.closest('tr');
+    if (!tr || !boFeatureConfigs[col]) return;
+
+    if (field === 'type' || !field) boFeatureConfigs[col].type = tr.querySelector('.bo-f-type').value;
+    if (field === 'range' || !field) boFeatureConfigs[col].range = tr.querySelector('.bo-f-range').value;
+    if (field === 'include' || !field) boFeatureConfigs[col].included = tr.querySelector('.bo-f-include').checked;
+};
+
 function updateAcqSelectForMultiObj() {
-    const activeObjs = document.querySelectorAll('#bo-objectives-list .bo-o-include:checked').length;
+    const includedObjs = Array.from(document.querySelectorAll('#bo-objectives-list .bo-o-include:checked'));
+    const activeObjs = includedObjs.length;
     const acqSelect = document.getElementById('acq-type-select');
     const acqItem = acqSelect ? acqSelect.closest('.tweak-item') : null;
     if (!acqSelect) return;
+
     const isMultiObj = activeObjs > 1;
     acqSelect.disabled = isMultiObj;
     acqSelect.style.opacity = isMultiObj ? '0.45' : '1';
     acqSelect.style.cursor = isMultiObj ? 'not-allowed' : '';
+
     if (acqItem) {
         let note = acqItem.querySelector('.mo-note');
         if (isMultiObj) {
+            // Check if weights are uniform
+            const weights = includedObjs.map(cb => {
+                const tr = cb.closest('tr');
+                return parseFloat(tr.querySelector('.bo-o-importance').value) || 0;
+            });
+            const allEqual = weights.every(v => Math.abs(v - weights[0]) < 0.1);
+            
             if (!note) {
                 note = document.createElement('small');
                 note.className = 'mo-note';
-                note.style.cssText = 'color: var(--text-secondary); font-size: 0.75rem; margin-top: 3px; display: block;';
-                note.textContent = 'Multi-objective uses NEHVI';
+                note.style.cssText = 'color: var(--text-secondary); font-size: 0.75rem; margin-top: 3px; display: block; border-left: 2px solid var(--accent-color); padding-left: 6px;';
                 acqItem.appendChild(note);
+            }
+            if (allEqual) {
+                note.innerHTML = `<span style="color:var(--accent-color)">Discovery Mode:</span> Exploring full Pareto front via NEHVI.`;
+            } else {
+                note.innerHTML = `<span style="color:var(--accent-color)">Priority Mode:</span> Focus on weighted sum (Scalarized EI).`;
             }
         } else {
             if (note) note.remove();
@@ -445,24 +582,16 @@ function renderSASetup() {
     
     let featHtml = '';
     currentColumns.filter(c => columnRoles[c] === 'feature').forEach(col => {
-        // Heuristic: Categorical if it's explicitly non-numeric. 
-        // If it's numeric, we always treat as continuous initially, even if it has few values.
-        let type = 'continuous';
-        const colIdx = currentColumns.indexOf(col);
-        const sample = currentData ? currentData.slice(0, 200).map(r => r[colIdx]) : [];
-        const isNumeric = sample.every(v => v === null || v === '' || !isNaN(Number(v)));
-        if (!isNumeric) {
-            type = 'categorical';
-        }
+        const cfg = saFeatureConfigs[col] || { type: 'continuous', included: true };
 
         featHtml += `<tr>
             <td>${col}</td>
-            <td><select class="sa-f-type" data-col="${col}">
-                <option value="continuous" ${type === 'continuous' ? 'selected' : ''}>Numerical</option>
-                <option value="discrete">Discrete</option>
-                <option value="categorical" ${type === 'categorical' ? 'selected' : ''}>Categorical</option>
+            <td><select class="sa-f-type" data-col="${col}" onchange="syncSAFeatureConfig('${col}', 'type')">
+                <option value="continuous" ${cfg.type === 'continuous' ? 'selected' : ''}>Numerical</option>
+                <option value="discrete" ${cfg.type === 'discrete' ? 'selected' : ''}>Discrete</option>
+                <option value="categorical" ${cfg.type === 'categorical' ? 'selected' : ''}>Categorical</option>
             </select></td>
-            <td><input type="checkbox" class="sa-f-include" data-col="${col}" checked> Include</td>
+            <td><input type="checkbox" class="sa-f-include" data-col="${col}" ${cfg.included ? 'checked' : ''} onchange="syncSAFeatureConfig('${col}', 'include')"> Include</td>
         </tr>`;
     });
     list.innerHTML = featHtml;
@@ -487,6 +616,14 @@ function renderSASetup() {
     objList.innerHTML = objHtml;
 }
 
+window.syncSAFeatureConfig = (col, field) => {
+    const tr = document.querySelector(`.sa-f-type[data-col="${col}"]`)?.closest('tr');
+    if (!tr || !saFeatureConfigs[col]) return;
+
+    if (field === 'type' || !field) saFeatureConfigs[col].type = tr.querySelector('.sa-f-type').value;
+    if (field === 'include' || !field) saFeatureConfigs[col].included = tr.querySelector('.sa-f-include').checked;
+};
+
 function safeAddListener(id, event, callback) {
     const el = document.getElementById(id);
     if (el) el.addEventListener(event, callback);
@@ -502,6 +639,7 @@ function initButtons() {
             <td><input type="text" class="doe-f-name" value="Feature_${list.children.length + 1}"></td>
             <td><select class="doe-f-type" onchange="updatePlaceholder(this)">
                 <option value="continuous">continuous</option>
+                <option value="regular">regular</option>
                 <option value="discrete">discrete</option>
                 <option value="categorical">categorical</option>
             </select></td>
@@ -719,6 +857,7 @@ window.updatePlaceholder = (select) => {
     const input = tr.querySelector('.doe-f-range');
     const type = select.value;
     if (type === 'continuous') input.placeholder = '[min, max]';
+    else if (type === 'regular') input.placeholder = '[min, max]steps';
     else if (type === 'discrete') input.placeholder = 'xx, yy, zz,...';
     else if (type === 'categorical') input.placeholder = 'A, B, C,...';
 };
@@ -854,13 +993,15 @@ async function runBO() {
             importance: tr.querySelector('.bo-o-importance').value
         }));
 
+    const strategy = document.querySelector('input[name="bo-strategy"]:checked').value;
     const tweaks = {
         batch_size: document.getElementById('batch-size').value,
         acq_type: document.getElementById('acq-type-select').value,
         kernel: document.getElementById('kernel-select').value,
         exploration: document.getElementById('style-slider').value,
         noiseless: document.getElementById('bo-noiseless').checked,
-        avoid_reval: document.getElementById('bo-avoid-reval').checked
+        avoid_reval: document.getElementById('bo-avoid-reval').checked,
+        optimization_strategy: strategy
     };
 
     document.getElementById('loading-text').textContent = "Optimizing...";
@@ -1512,9 +1653,6 @@ function detectParetoIndices(data, objCols) {
                 else if (config.type === 'minimize') { v1Score = -v1; v2Score = -v2; }
                 else { v1Score = -Math.abs(v1 - target); v2Score = -Math.abs(v2 - target); }
 
-                v1Score *= weight;
-                v2Score *= weight;
-
                 if (v2Score < v1Score) p2AtLeastAsGoodAsP1 = false;
                 if (v2Score > v1Score) p2StrictlyBetterThanP1 = true;
             }
@@ -1578,8 +1716,7 @@ function renderParetoPlot() {
                 if (cfg && cfg.type === 'target') {
                     plotVal = Math.abs(rawVal - parseFloat(cfg.target || 0));
                 }
-                const importance = cfg ? parseFloat(cfg.importance || 100) : 100;
-                p[col] = plotVal * (importance / 100);
+                p[col] = plotVal;
             });
             return p;
         });
@@ -1590,8 +1727,6 @@ function renderParetoPlot() {
         let title = `${col}`;
         if (cfg.type === 'target') title = `Dist. to ${cfg.target || 0} (${col})`;
         else title = `${col} (${cfg.type === 'maximize' ? 'Max' : 'Min'})`;
-        const imp = parseFloat(cfg.importance || 100);
-        if (imp < 100) title += ` [Weighted: ${imp}%]`;
         return title;
     };
 

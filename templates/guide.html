@@ -90,7 +90,7 @@
             <ol>
                 <li>
                     <span class="step-title">Step 1: Define Features</span>
-                    Go to the <b>Features</b> tab. Add your input variables. Choose <b>Continuous</b> or <b>Discrete</b> for numeric ranges (e.g., Temperature 20-100°C) or <b>Categorical</b> for non-numerical options (e.g., Catalyst A, B, C).
+                    Go to the <b>Features</b> tab. Add your input variables. Choose <b>Continuous</b> for smooth numeric ranges, <b>Regular</b> for fixed-step grids (e.g., `[20, 100]5` for 5 points), <b>Discrete</b> for specific values, or <b>Categorical</b> for non-numerical options (e.g., Catalyst A, B, C).
                 </li>
                 <li>
                     <span class="step-title">Step 2: Add Objectives</span>
@@ -131,7 +131,7 @@
                     <span class="step-title">Step 3: Review Pareto Trade-offs</span>
                     Look at the <b>Pareto Front</b> chart. Orange markers show experiments that achieve the best balance of all your objectives simultaneously.
                     <div class="info-box" style="margin: 0.5rem 0 1rem;">
-                        <b>Tip:</b> If you have 4 or more objectives, the Pareto chart will automatically switch to a <b>Table View</b> so you can clearly see the optimal settings for high-dimensional problems.
+                        <b>Note:</b> The Pareto plot displays <b>raw unweighted data</b>. Even if objectives have different importance, the chart shows the physical units of your measurements to keep the visualization clear and grounded in reality.
                     </div>
                 </li>
                 <li>
@@ -140,10 +140,22 @@
                     <h4 style="margin-top: 1rem; color: var(--text-primary);">Configuring BO Tweaks</h4>
                     <ul style="margin-top: 0.5rem; margin-bottom: 0;">
                         <li><b>Batch Size:</b> How many new experiments the AI should propose for your next lab campaign.</li>
+                        <li><b>Optimization Strategy:</b>
+                            <ul style="margin-top: 5px; margin-bottom: 5px;">
+                                <li><b>Gradient-based (Default):</b> Fast and precise for continuous parameters.</li>
+                                <li><b>Exhaustive Grid (EDBO+):</b> Tests every possible combination of a defined grid. Ideal for highly discrete spaces or when you want to "snap" to specific equipment settings.</li>
+                            </ul>
+                        </li>
                         <li><b>Acquisition Function:</b> The strategy the AI uses to score candidates (e.g., LogEI for confident improvements, or qUCB for balanced exploration).</li>
+                        <li><b>Adaptive Multi-Objective Strategy:</b>
+                            <ul style="margin-top: 5px; margin-bottom: 5px;">
+                                <li><b>Discovery Mode:</b> Active when all objectives have equal importance (e.g., 50/50). Uses NEHVI to find the best overall trade-offs.</li>
+                                <li><b>Priority Mode:</b> Active when you set unequal importance (e.g., 90/10). Uses Weighted Scalarized EI to strictly prioritize your "High Importance" goals.</li>
+                            </ul>
+                        </li>
                         <li><b>Kernel:</b> The mathematical assumption about the physical surface (Matern 5/2 is standard; RBF is smoother).</li>
                         <li><b>Exploration vs. Exploitation:</b> A slider to tell the AI whether to take risks (focus on unknown areas) or be greedy (focus near known optimal areas).</li>
-                        <li><b>Noiseless:</b> Check this only if your lab measurements have absolutely zero variance/error (rare in physical chemistry).</li>
+                        <li><b>Noiseless:</b> Check this only if your lab measurements have absolutely zero variance/error.</li>
                         <li><b>Avoid Re-evaluations:</b> Prevents the AI from proposing an experiment that has the exact same parameters as one you've already done.</li>
                     </ul>
                 </li>

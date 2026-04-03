@@ -22,6 +22,9 @@ import pandas as pd
 import numpy as np
 import torch
 from flask import Flask, request, jsonify, render_template, send_file
+import warnings
+warnings.filterwarnings('ignore', message='.*The model inputs are of type torch.float32.*')
+warnings.filterwarnings('ignore', message='.*has known numerical issues that lead to suboptimal.*')
 # BoTorch/GPyTorch imports for Bayesian Optimization
 from botorch.models import SingleTaskGP, MixedSingleTaskGP, ModelListGP
 from botorch.models.transforms import Standardize, Normalize
@@ -34,15 +37,16 @@ except ImportError:
 
 from botorch.acquisition.multi_objective.monte_carlo import qNoisyExpectedHypervolumeImprovement, qExpectedHypervolumeImprovement
 try:
-    from botorch.acquisition.multi_objective.monte_carlo import qLogNoisyExpectedHypervolumeImprovement
+    from botorch.acquisition.multi_objective.logei import qLogNoisyExpectedHypervolumeImprovement
 except ImportError:
-    qLogNoisyExpectedHypervolumeImprovement = qNoisyExpectedHypervolumeImprovement
+    try:
+        from botorch.acquisition.multi_objective.monte_carlo import qLogNoisyExpectedHypervolumeImprovement
+    except ImportError:
+        qLogNoisyExpectedHypervolumeImprovement = qNoisyExpectedHypervolumeImprovement
 
 from botorch.acquisition.multi_objective.objective import WeightedMCMultiOutputObjective
-from botorch.acquisition.objective import ScalarizedPosteriorTransform
-from botorch.optim import optimize_acqf, optimize_acqf_discrete
+from botorch.optim import optimize_acqf
 from botorch.utils.sampling import draw_sobol_samples
-import itertools
 from botorch.sampling.normal import SobolQMCNormalSampler
 from gpytorch.mlls import ExactMarginalLogLikelihood, SumMarginalLogLikelihood
 from gpytorch.kernels import RBFKernel, MaternKernel, ScaleKernel
@@ -123,9 +127,63 @@ def upload():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+def calculate_feature_precisions(data, columns, features_config):
+    """
+    Detects the maximum number of decimal places for each feature based on 
+    both the defined range and the existing values in the data table.
+    Ensures that trailing zeros (e.g., 1.50) are preserved if provided as strings.
+    """
+    precisions = {}
+    for f in features_config:
+        name = f['name']
+        f_type = f.get('type', 'continuous')
+        if f_type == 'categorical':
+            continue
+            
+        # 1. Check decimals in the range specification (e.g., "0.0, 1.0" -> 1)
+        f_range = str(f.get('range', ''))
+        matches = re.findall(r"[-+]?\d*\.?\d+", f_range)
+        max_p = 0
+        has_decimals_or_integers = False
+
+        for m in matches:
+            has_decimals_or_integers = True
+            if '.' in m:
+                max_p = max(max_p, len(m.split('.')[1]))
+        
+        # 2. Check decimals in the actual data rows (if any)
+        if data and columns and name in columns:
+            try:
+                idx = columns.index(name)
+                for row in data:
+                    if idx < len(row):
+                        val = row[idx]
+                        if val is not None and val != "":
+                            s = str(val).strip()
+                            if s:
+                                has_decimals_or_integers = True
+                            if '.' in s:
+                                # Count after the dot, preserving trailing zeros (handsontable provides strings)
+                                max_p = max(max_p, len(s.split('.')[1]))
+            except: pass
+            
+        # Fallback to a reasonable precision if none detected (usually 3 for chemistry/physics)
+        if has_decimals_or_integers:
+            # If the range/data are all integers, max_p will be 0
+            precisions[name] = max_p
+        else:
+            precisions[name] = 3 if f_type == 'continuous' else 0
+    return precisions
+
 @app.route('/optimize', methods=['POST'])
 def optimize():
     try:
+        # Seed for reproducibility
+        torch.manual_seed(42)
+        np.random.seed(42)
+        import random
+        random.seed(42)
+        
         req_data = request.get_json()
         data = req_data.get('data')
         columns = req_data.get('columns')
@@ -135,11 +193,13 @@ def optimize():
 
         df = pd.DataFrame(data, columns=columns)
         
+        # 1. Detect significant figures / decimals from raw strings early to avoid loss by float conversion
+        feature_precisions = calculate_feature_precisions(data, columns, features_config)
+        
         # 1. Prepare Features (X)
         train_x_list = []
         bounds = [] 
         categorical_features = []
-        feature_levels = []
         
         for f in features_config:
             name = f['name']
@@ -152,38 +212,23 @@ def optimize():
                 feat_vals = pd.to_numeric(df[name], errors='coerce').fillna(0).values
                 train_x_list.append(feat_vals)
                 bounds.append([low, high])
-                feature_levels.append(None) # Continuous is handled later if strategy=exhaustive
             elif f['type'] == 'discrete':
+                # Handle cases like [10, 20, 30] or 10, 20, 30
                 clean_range = f_range.replace('[', '').replace(']', '')
                 values = sorted([float(x.strip()) for x in clean_range.split(',') if x.strip()])
                 if not values: values = [0.0]
                 feat_vals = pd.to_numeric(df[name], errors='coerce').fillna(values[0]).values
                 train_x_list.append(feat_vals)
                 bounds.append([values[0], values[-1]])
-                feature_levels.append(values)
-            elif f['type'] == 'regular':
-                import re
-                matches = re.findall(r"[-+]?\d*\.?\d+", f_range)
-                if len(matches) >= 3:
-                    low, high, steps = sorted([float(matches[0]), float(matches[1])]) + [int(float(matches[2]))]
-                    values = np.linspace(low, high, steps).tolist()
-                elif len(matches) == 2:
-                    low, high = sorted([float(matches[0]), float(matches[1])])
-                    values = np.linspace(low, high, 10).tolist()
-                else:
-                    values = [0.0]
-                feat_vals = pd.to_numeric(df[name], errors='coerce').fillna(values[0]).values
-                train_x_list.append(feat_vals)
-                bounds.append([values[0], values[-1]])
-                feature_levels.append(values)
             elif f['type'] == 'categorical':
                 choices = [str(x).strip() for x in f_range.split(',')]
+                # Use string mapping to be robust against numeric categorical data
                 mapping = {choice: i for i, choice in enumerate(choices)}
+                # Ensure data is compared as strings
                 encoded = df[name].astype(str).map(mapping).fillna(0).values
                 train_x_list.append(encoded)
                 bounds.append([0, len(choices) - 1])
                 categorical_features.append(len(train_x_list) - 1)
-                feature_levels.append(list(range(len(choices))))
 
         # Use float32 (Single Precision) for universal GPU support (Intel/AMD/NVIDIA)
         train_x = torch.tensor(np.stack(train_x_list, axis=1), dtype=torch.float32).to(DEVICE)
@@ -269,165 +314,136 @@ def optimize():
             else:
                 intensity *= 2  # Conservative for CPU/DML to maintain OS responsiveness
             
+            # Reduce base samples for multi-objective to prevent OOM
             is_mo = train_y.shape[1] > 1
-            # Check if weights are uniform (Discovery Mode) or non-uniform (Priority Mode)
-            is_uniform = torch.allclose(weights_t, weights_t[0].expand_as(weights_t), atol=1e-2) if is_mo else True
-            
-            base_mc_samples = 64 if is_mo else 256
+            base_mc_samples = 128 if is_mo else 256
             mc_samples = int(base_mc_samples * intensity)
             sampler = SobolQMCNormalSampler(sample_shape=torch.Size([mc_samples]))
 
-            if is_mo:
-                if is_uniform:
-                    # Discovery mode: use qNEHVI for tradeoffs
-                    mo_obj = WeightedMCMultiOutputObjective(weights=weights_t.to(OPT_DEVICE))
-                    ty_compute = train_y.to(OPT_DEVICE)
-                    mins, maxs = ty_compute.min(dim=0).values, ty_compute.max(dim=0).values
-                    ref_point = (mins - 0.2 * (maxs - mins + 1e-6)) * weights_t.to(OPT_DEVICE)
-                    acq_func = qLogNoisyExpectedHypervolumeImprovement(
-                        model=model,
-                        ref_point=ref_point,
-                        X_baseline=train_x.to(OPT_DEVICE),
-                        sampler=sampler,
-                        objective=mo_obj,
-                        prune_baseline=True
-                    ).to(OPT_DEVICE)
-                else:
-                    # Priority mode: switch to Scalarized Expected Improvement
-                    # This ensures non-uniform weights actually bias the recommendation.
-                    post_tf = ScalarizedPosteriorTransform(weights=weights_t.to(OPT_DEVICE))
-                    # Calculate best_f on the scalarized training data
-                    best_f = (train_y.to(OPT_DEVICE) * weights_t.to(OPT_DEVICE)).sum(dim=-1).max().item()
-                    acq_func = qLogExpectedImprovement(
-                        model=model,
-                        best_f=best_f,
-                        sampler=sampler,
-                        posterior_transform=post_tf
-                    ).to(OPT_DEVICE)
+            if train_y.shape[1] > 1:
+                # Multi-objective: use qNEHVI for tradeoffs
+                mo_obj = WeightedMCMultiOutputObjective(weights=weights_t.to(OPT_DEVICE))
+                
+                with torch.no_grad():
+                    # IMPORTANT: Standardize training data for reference point calculation
+                    # ModelListGP doesn't have a top-level outcome_transform, so we iterate
+                    ty_opt = train_y.to(OPT_DEVICE)
+                    if hasattr(model, 'outcome_transform'):
+                        std_y, _ = model.outcome_transform(ty_opt)
+                    else:
+                        # ModelListGP case: each sub-model has its own transform
+                        std_y_list = []
+                        for i, m in enumerate(model.models):
+                            std_yi, _ = m.outcome_transform(ty_opt[:, i:i+1])
+                            std_y_list.append(std_yi)
+                        std_y = torch.cat(std_y_list, dim=-1)
+                    mins, maxs = std_y.min(dim=0).values, std_y.max(dim=0).values
+                
+                # Controlled Exploitation: Ensures reference point stays bounded below Pareto min to allow exploitation gradients
+                # Linear: 0.01 (Exploitation) -> 0.50 (Exploration)
+                ref_offset = 0.01 + (exploration * 0.49)
+                ref_point = (mins - ref_offset * (maxs - mins + 1e-6)) * weights_t.to(OPT_DEVICE)
+                
+                acq_func = qLogNoisyExpectedHypervolumeImprovement(
+                    model=model,
+                    ref_point=ref_point,
+                    X_baseline=train_x.to(OPT_DEVICE),
+                    sampler=sampler, 
+                    objective=mo_obj,
+                    prune_baseline=True
+                ).to(OPT_DEVICE)
             else:
                 # Single-objective
                 if acq_type == 'EI':
+                    # IMPORTANT: The model uses outcomes that are Standardized internally.
+                    # We must calculate best_f in the standardized space for the acquisition function to be valid.
+                    # Standard transformation: (y - mean) / std.
+                    # If we don't do this, raw_y_max compared to standardized predictions
+                    # results in EI=0 everywhere, causing random restarts.
+                    with torch.no_grad():
+                        # Ensure data is on the same device as the model (CPU for DirectML stability)
+                        ty_opt = train_y.to(OPT_DEVICE)
+                        # Standardize the current best value according to the model's internal transform
+                        std_y, _ = model.outcome_transform(ty_opt)
+                        best_f_std = std_y.max().item()
+
+                    # Exploration/Exploitation for EI via best_f threshold:
+                    # Exploitation (exploration=0.0): best_f set slightly BELOW current best so EI
+                    #   gradient stays alive and optimizer homes in precisely around the known peak.
+                    # Exploration (exploration=1.0): best_f raised well above current best, pushing
+                    #   EI to search beyond the known optimum for undiscovered regions.
+                    # Range: -0.15 * std_range (exploitation) -> +2.0 * std_range (exploration)
+                    std_range = max(std_y.max().item() - std_y.min().item(), 1e-3)
+                    xi = -0.15 * std_range + (exploration ** 1.5) * (2.15 * std_range)
                     acq_func = qLogExpectedImprovement(
                         model=model,
-                        best_f=train_y.to(OPT_DEVICE).max().item(),
-                        sampler=sampler, 
+                        best_f=best_f_std + xi,
+                        sampler=sampler,
                         objective=None
                     ).to(OPT_DEVICE)
-                elif acq_type == 'LCB':
-                    beta = (1.0 - exploration) * 10.0 + 0.1
-                    acq_func = qUpperConfidenceBound(model, beta=beta, sampler=sampler).to(OPT_DEVICE)
                 else:
-                    # Fallback to EI if unknown type
-                    acq_func = qLogExpectedImprovement(
-                        model=model,
-                        best_f=train_y.to(OPT_DEVICE).max().item(),
-                        sampler=sampler, 
-                        objective=None
+                    # UCB: beta = 0.1 (Exploitation) -> 50.1 (Exploration)
+                    # Use quadratic scaling to give more precision at low exploration values
+                    beta = 0.1 + (exploration**2 * 50.0)
+                    acq_func = qUpperConfidenceBound(
+                        model=model, 
+                        beta=beta, 
+                        sampler=sampler
                     ).to(OPT_DEVICE)
-                
-                print(f"DEBUG: acq_type={acq_type}, batch_size={batch_size}, acq_func_class={acq_func.__class__.__name__}")
 
+            p_constraints = []
+            if tweaks.get('constraints'):
+                try:
+                    raw_expr = tweaks.get('constraints').strip().replace('<= 0', '')
+                    # Pre-compile vectorized torch expression
+                    indices = {f['name']: i for i, f in enumerate(features_config)}
+                    vec_expr = raw_expr
+                    # Replace names with X[..., i] to allow full vectorization on GPU
+                    for name, idx in indices.items():
+                        vec_expr = re.sub(rf'\b{re.escape(name)}\b', f'X[..., {idx}]', vec_expr)
+                    
+                    code = compile(f"torch.negative({vec_expr})", '<string>', 'eval')
+                    def constraint_func(X):
+                        # X is provided on OPT_DEVICE during optimization
+                        return eval(code, {"X": X, "torch": torch, "np": np, "__builtins__": {}})
+                    p_constraints = [constraint_func]
+                except Exception as ex: print(f"Constraint error: {ex}")
 
-            # Optimization Logic
-            strategy = tweaks.get('optimization_strategy', 'gradient_based')
-
-            if strategy == 'exhaustive_grid':
-                # Generate exhaustive grid from all discrete/regular/categorical/continuous levels
-                final_levels = []
-                for i, levels in enumerate(feature_levels):
-                    if levels is None:
-                        # For continuous features in exhaustive mode, default to 10 points
-                        low, high = bounds[i]
-                        final_levels.append(np.linspace(low, high, 10).tolist())
-                    else:
-                        final_levels.append(levels)
-                
-                # Compute total combinations for safety
-                import math
-                n_combos = math.prod(len(l) for l in final_levels)
-                if n_combos > 100000:
-                    return jsonify({'error': f'Exhaustive grid is too large ({n_combos:,} combinations). Please reduce steps or categorical features.'}), 400
-                
-                all_combos = list(itertools.product(*final_levels))
-                # Filter out evaluated points to prevent redundancy
-                train_fps = {tuple(np.round(row, 6)) for row in train_x.cpu().numpy()}
-                filtered_combos = [c for c in all_combos if tuple(np.round(c, 6)) not in train_fps]
-                
-                if not filtered_combos:
-                    return jsonify({'error': 'All points in the grid scope have already been evaluated.'}), 400
-
-                candidates_grid = torch.tensor(filtered_combos, dtype=torch.float32).to(OPT_DEVICE)
-                
-                # Apply constraints if any
-                p_constraints = []
-                if tweaks.get('constraints'):
-                    try:
-                        raw_expr = tweaks.get('constraints').strip().replace('<= 0', '')
-                        indices = {f['name']: i for i, f in enumerate(features_config)}
-                        vec_expr = raw_expr
-                        for name, idx in indices.items():
-                            vec_expr = re.sub(rf'\b{re.escape(name)}\b', f'X[..., {idx}]', vec_expr)
-                        code = compile(f"torch.negative({vec_expr})", '<string>', 'eval')
-                        def constraint_func(X):
-                            return eval(code, {"X": X, "torch": torch, "np": np, "__builtins__": {}})
-                        p_constraints = [constraint_func]
-                        
-                        for constraint in p_constraints:
-                            mask = constraint(candidates_grid).cpu().numpy() >= 0
-                            candidates_grid = candidates_grid[mask]
-                        if candidates_grid.shape[0] == 0:
-                            return jsonify({'error': 'No grid points satisfy the provided constraints.'}), 400
-                    except Exception as ex: print(f"Constraint error: {ex}")
-
-                # Discrete Optimization
-                candidates, _ = optimize_acqf_discrete(
-                    acq_function=acq_func,
-                    q=batch_size,
-                    choices=candidates_grid,
-                    unique=True
-                )
-                candidates = candidates.cpu()
-            else:
-                p_constraints = []
-                if tweaks.get('constraints'):
-                    try:
-                        raw_expr = tweaks.get('constraints').strip().replace('<= 0', '')
-                        # Pre-compile vectorized torch expression
-                        indices = {f['name']: i for i, f in enumerate(features_config)}
-                        vec_expr = raw_expr
-                        # Replace names with X[..., i] to allow full vectorization on GPU
-                        for name, idx in indices.items():
-                            vec_expr = re.sub(rf'\b{re.escape(name)}\b', f'X[..., {idx}]', vec_expr)
-                        
-                        code = compile(f"torch.negative({vec_expr})", '<string>', 'eval')
-                        def constraint_func(X):
-                            # X is provided on OPT_DEVICE during optimization
-                            return eval(code, {"X": X, "torch": torch, "np": np, "__builtins__": {}})
-                        p_constraints = [constraint_func]
-                    except Exception as ex: print(f"Constraint error: {ex}")
-
-                # Optimization with controlled memory usage
-                base_restarts = 8 if is_mo else 32
-                base_raw_samples = 128 if is_mo else 512
-                
-                candidates, _ = optimize_acqf(
-                    acq_function=acq_func, 
-                    bounds=bounds_t.to(OPT_DEVICE), 
-                    q=batch_size,
-                    num_restarts=int(base_restarts * intensity), 
-                    raw_samples=int(base_raw_samples * intensity), 
-                    nonlinear_inequality_constraints=p_constraints if p_constraints else None
-                )
-                # Ensure candidates are on CPU for decoding
-                candidates = candidates.cpu()
+            # Optimization with controlled memory usage
+            # Optimize Acquisition Function
+            # Using higher sample density for precision
+            raw_samples = 512 if is_mo else 1024
+            num_restarts = 10 if is_mo else 20
+            
+            candidates, _ = optimize_acqf(
+                acq_function=acq_func, 
+                bounds=bounds_t.to(OPT_DEVICE), 
+                q=batch_size,
+                num_restarts=num_restarts, 
+                raw_samples=raw_samples, 
+                nonlinear_inequality_constraints=p_constraints if p_constraints else None
+            )
+            # Ensure candidates are on CPU for decoding
+            candidates = candidates.cpu()
         
         # 4. Decode Results
         feat_names = [f['name'] for f in features_config]
+        
+        # Use the pre-detected precision
+        feature_decimals = feature_precisions
+
         def get_fingerprint(row_dict):
             parts = []
             for name in feat_names:
                 val = row_dict[name]
-                parts.append(f"{float(val):.3f}" if isinstance(val, (int, float)) else str(val))
+                dec = feature_decimals.get(name, 3)
+                if isinstance(val, (int, float)):
+                    # Use higher internal precision (min 4dp) for duplicate detection
+                    # to avoid false positives from rounding at output precision
+                    fp_dec = max(dec, 4)
+                    parts.append(f"{float(val):.{fp_dec}f}")
+                else:
+                    parts.append(str(val))
             return "|".join(parts)
 
         existing_fps = set()
@@ -443,22 +459,18 @@ def optimize():
                     if f['type'] == 'discrete':
                         d_vals = sorted([float(x.strip()) for x in f['range'].split(',') if x.strip()])
                         val = min(d_vals, key=lambda x: abs(x - val)) if d_vals else val
-                    elif f['type'] == 'regular':
-                        matches = re.findall(r"[-+]?\d*\.?\d+", f['range'])
-                        if len(matches) >= 3:
-                            low, high, steps = sorted([float(matches[0]), float(matches[1])]) + [int(float(matches[2]))]
-                            d_vals = np.linspace(low, high, steps).tolist()
-                        elif len(matches) == 2:
-                            low, high = sorted([float(matches[0]), float(matches[1])])
-                            d_vals = np.linspace(low, high, 10).tolist()
-                        else:
-                            d_vals = []
-                        val = min(d_vals, key=lambda x: abs(x - val)) if d_vals else val
                     elif f['type'] == 'categorical':
                         choices = [x.strip() for x in f['range'].split(',')]
                         idx = max(0, min(len(choices)-1, int(round(val))))
                         val = choices[idx]
-                    if isinstance(val, (int, float)): val = round(float(val), 3)
+                    
+                    if isinstance(val, (int, float)):
+                        dec = feature_decimals.get(f['name'], 3)
+                        val = round(float(val), dec)
+                        if dec == 0:
+                            val = int(val)
+                        else:
+                            val = f"{val:.{dec}f}"
                     row[f['name']] = val
                 return row
 
@@ -468,34 +480,27 @@ def optimize():
                 t_cand = cand.clone()
                 while get_fingerprint(suggestion) in existing_fps and attempts < 20:
                     attempts += 1
+                    # Progressive jitter strategy: escalate only continuous nudges for first 15 attempts,
+                    # only rotate discrete/categorical as a true last resort (attempts > 15).
+                    # This preserves the optimal categorical class found by the acquisition function.
+                    jitter_scale = 0.02 if attempts <= 5 else (0.05 if attempts <= 10 else 0.10)
                     for i, f in enumerate(features_config):
                         if f['type'] == 'continuous':
                             span = bounds[i][1] - bounds[i][0]
-                            t_cand[i] = torch.clamp(t_cand[i] + (torch.rand(1).item() - 0.5) * span * 0.1, bounds[i][0], bounds[i][1])
-                        elif f['type'] == 'discrete':
+                            t_cand[i] = torch.clamp(
+                                t_cand[i] + (torch.rand(1).item() - 0.5) * span * jitter_scale,
+                                bounds[i][0], bounds[i][1]
+                            )
+                        elif f['type'] == 'discrete' and attempts > 15:
                             d_vals = sorted([float(x.strip()) for x in f['range'].split(',') if x.strip()])
                             if len(d_vals) > 1:
                                 cur_idx = d_vals.index(suggestion[f['name']])
-                                t_cand[i] = d_vals[(cur_idx + attempts) % len(d_vals)]
-                        elif f['type'] == 'regular':
-                            matches = re.findall(r"[-+]?\d*\.?\d+", f['range'])
-                            if len(matches) >= 3:
-                                low, high, steps = sorted([float(matches[0]), float(matches[1])]) + [int(float(matches[2]))]
-                                d_vals = np.linspace(low, high, steps).tolist()
-                            elif len(matches) == 2:
-                                low, high = sorted([float(matches[0]), float(matches[1])])
-                                d_vals = np.linspace(low, high, 10).tolist()
-                            else:
-                                d_vals = []
-                            
-                            if len(d_vals) > 1:
-                                cur_idx = d_vals.index(suggestion[f['name']])
-                                t_cand[i] = d_vals[(cur_idx + attempts) % len(d_vals)]
-                        elif f['type'] == 'categorical':
+                                t_cand[i] = d_vals[(cur_idx + (attempts - 15)) % len(d_vals)]
+                        elif f['type'] == 'categorical' and attempts > 15:
                             choices = [x.strip() for x in f['range'].split(',')]
                             if len(choices) > 1:
                                 cur_idx = choices.index(suggestion[f['name']])
-                                t_cand[i] = float((cur_idx + attempts) % len(choices))
+                                t_cand[i] = float((cur_idx + (attempts - 15)) % len(choices))
                     suggestion = decode_cand(t_cand)
             suggestions.append(suggestion)
             existing_fps.add(get_fingerprint(suggestion))
@@ -510,11 +515,22 @@ def optimize():
 @app.route('/doe', methods=['POST'])
 def run_doe():
     try:
+        # Seed for reproducibility
+        torch.manual_seed(42)
+        np.random.seed(42)
+        import random
+        random.seed(42)
+
         req_data = request.get_json()
         features_config = req_data.get('features', [])
         tweaks = req_data.get('tweaks', {})
         model_type = tweaks.get('model', 'bbdesign') # Default to Box-Behnken
         max_runs = int(tweaks.get('max_runs', 50))
+        
+        # Detect precision from features_config (ranges) or provided data if any
+        data = req_data.get('data')
+        columns = req_data.get('columns')
+        feature_precisions = calculate_feature_precisions(data, columns, features_config)
 
         # Filter features with valid configurations
         valid_features = []
@@ -534,28 +550,6 @@ def run_doe():
                         'choices': choices, 
                         'type': 'categorical',
                         'range': f_range
-                    })
-            elif f_type == 'regular':
-                matches = [float(m) for m in re.findall(r"[-+]?\d*\.?\d+", f_range)]
-                if len(matches) >= 3:
-                    low, high, steps = sorted([matches[0], matches[1]]) + [int(matches[2])]
-                    valid_features.append({
-                        'name': name, 
-                        'low': low, 
-                        'high': high, 
-                        'type': f_type,
-                        'range': f_range,
-                        'levels': np.linspace(low, high, steps).tolist()
-                    })
-                elif len(matches) == 2:
-                    low, high = min(matches), max(matches)
-                    valid_features.append({
-                        'name': name, 
-                        'low': low, 
-                        'high': high, 
-                        'type': f_type,
-                        'range': f_range,
-                        'levels': np.linspace(low, high, 10).tolist()
                     })
             else:
                 # Support both [min, max] and min, max formats
@@ -660,14 +654,14 @@ def run_doe():
                             val = min(d_vals, key=lambda x: abs(x - val))
                         else:
                             val = round(float(val))
-                    elif feat['type'] == 'regular':
-                        d_vals = feat.get('levels', [])
-                        if d_vals:
-                            val = min(d_vals, key=lambda x: abs(x - val))
-                        else:
-                            val = round(float(val), 3)
                     else:
-                        val = round(float(val), 3)
+                        # Use dynamic precision
+                        dec = feature_precisions.get(feat['name'], 3)
+                        val = round(float(val), dec)
+                        if dec == 0:
+                            val = int(val)
+                        else:
+                            val = f"{val:.{dec}f}"
                     entry[feat['name']] = val
             suggested_table.append(entry)
 
@@ -1155,8 +1149,9 @@ if __name__ == '__main__':
     import os
     port = int(os.environ.get("PORT", 7860))
     
-    # Only open browser if running locally on default port
-    if port == 5000:
+    # Open browser automatically if running as a standalone app or if PORT is not set
+    if getattr(sys, 'frozen', False) or os.environ.get("PORT") is None:
+        print(f"Standalone mode detected. Attempting to open browser on port {port}...")
         import threading
         import webbrowser
         def open_browser():
