@@ -866,8 +866,36 @@ input[type="range"] {
         margin-bottom: 1rem;
     }
 
-    /* Action Grid inside SA module */
     .action-grid {
         grid-template-columns: 1fr;
     }
+}
+
+/* Highlight styles for selective Export/Import matching columns */
+.highlight-feature-col {
+    background-color: rgba(14, 165, 233, 0.1) !important;
+    border-left: 2px solid var(--accent-color) !important;
+    border-right: 2px solid var(--accent-color) !important;
+}
+
+.highlight-objective-col {
+    background-color: rgba(16, 185, 129, 0.1) !important;
+    border-left: 2px solid var(--success-color) !important;
+    border-right: 2px solid var(--success-color) !important;
+}
+
+th.highlight-feature-col {
+    border-top: 2px solid var(--accent-color) !important;
+}
+
+th.highlight-objective-col {
+    border-top: 2px solid var(--success-color) !important;
+}
+
+tr:last-child td.highlight-feature-col {
+    border-bottom: 2px solid var(--accent-color) !important;
+}
+
+tr:last-child td.highlight-objective-col {
+    border-bottom: 2px solid var(--success-color) !important;
 }

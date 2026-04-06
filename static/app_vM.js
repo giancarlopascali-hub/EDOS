@@ -757,6 +757,183 @@ function initButtons() {
         const paretoData = currentData.filter((_, i) => paretoIndices.includes(i));
         exportData(paretoData, currentColumns);
     });
+
+    // Highlight logic
+    const applyHighlight = (tableId, type) => {
+        const table = document.getElementById(tableId);
+        if (!table) return;
+        const ths = table.querySelectorAll('thead th');
+        ths.forEach((th, idx) => {
+            let matches = false;
+            
+            if (type === 'feature') {
+                if (tableId === 'doe-results-table') {
+                    const feats = suggestionsData && suggestionsData.length > 0 ? Object.keys(suggestionsData[0]) : [];
+                    matches = idx < feats.length;
+                } else {
+                    // For BO results-table
+                    matches = !th.textContent.includes('(Result)');
+                }
+            } else if (type === 'objective') {
+                if (tableId === 'doe-results-table') {
+                    const feats = suggestionsData && suggestionsData.length > 0 ? Object.keys(suggestionsData[0]) : [];
+                    matches = idx >= feats.length;
+                } else {
+                    // For BO results-table
+                    matches = th.textContent.includes('(Result)');
+                }
+            }
+            
+            if (matches) {
+                th.classList.add(type === 'feature' ? 'highlight-feature-col' : 'highlight-objective-col');
+                table.querySelectorAll(`tbody tr`).forEach(tr => {
+                    const td = tr.children[idx];
+                    if(td) td.classList.add(type === 'feature' ? 'highlight-feature-col' : 'highlight-objective-col');
+                });
+            }
+        });
+    };
+    
+    const removeHighlight = (tableId) => {
+        const table = document.getElementById(tableId);
+        if (table) {
+            table.querySelectorAll('.highlight-feature-col, .highlight-objective-col').forEach(el => {
+                el.classList.remove('highlight-feature-col', 'highlight-objective-col');
+            });
+        }
+    };
+
+    safeAddListener('doe-export-features-btn', 'mouseenter', () => applyHighlight('doe-results-table', 'feature'));
+    safeAddListener('doe-export-features-btn', 'mouseleave', () => removeHighlight('doe-results-table'));
+    safeAddListener('export-features-btn', 'mouseenter', () => applyHighlight('results-table', 'feature'));
+    safeAddListener('export-features-btn', 'mouseleave', () => removeHighlight('results-table'));
+
+    safeAddListener('doe-import-results-btn', 'mouseenter', () => applyHighlight('doe-results-table', 'objective'));
+    safeAddListener('doe-import-results-btn', 'mouseleave', () => removeHighlight('doe-results-table'));
+    safeAddListener('import-results-btn', 'mouseenter', () => applyHighlight('results-table', 'objective'));
+    safeAddListener('import-results-btn', 'mouseleave', () => removeHighlight('results-table'));
+
+    // Selective Export Features
+    safeAddListener('doe-export-features-btn', 'click', () => {
+        if (!suggestionsData || suggestionsData.length === 0) return;
+        const rows = document.querySelectorAll('#doe-results-body tr');
+        if (rows.length === 0) return;
+        const feats = Object.keys(suggestionsData[0]);
+        const cols = [...feats]; 
+        
+        const exportArr = Array.from(rows).map(tr => {
+            const cells = tr.querySelectorAll('td');
+            return Array.from(cells).slice(0, feats.length).map(td => td.textContent.trim());
+        });
+        exportData(exportArr, cols);
+    });
+
+    safeAddListener('export-features-btn', 'click', () => {
+        if (!suggestionsData || suggestionsData.length === 0) return;
+        const rows = document.querySelectorAll('#results-table-body tr');
+        if (rows.length === 0) return;
+        const featCols = currentColumns.filter(c => columnRoles[c] === 'feature');
+        const cols = [...featCols]; 
+        
+        const exportArr = Array.from(rows).map(tr => {
+            const cells = tr.querySelectorAll('td');
+            return Array.from(cells).slice(0, featCols.length).map(td => td.textContent.trim());
+        });
+        exportData(exportArr, cols);
+    });
+
+    // Selective Import Results
+    safeAddListener('doe-import-results-btn', 'click', () => document.getElementById('doe-import-results-input').click());
+    safeAddListener('doe-import-results-input', 'change', (e) => handleResultsImport(e, 'doe-results-table', currentDoEObjectives.map(o => o.name), false));
+
+    safeAddListener('import-results-btn', 'click', () => document.getElementById('import-results-input').click());
+    safeAddListener('import-results-input', 'change', (e) => handleResultsImport(e, 'results-table', currentColumns.filter(c => columnRoles[c] === 'objective'), true));
+}
+
+function handleResultsImport(e, tableId, expectedObjCols, autoCommit) {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    e.target.value = '';
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        const text = event.target.result;
+        const lines = text.trim().split('\n');
+        if (lines.length < 2) {
+            alert('CSV should contain at least a header row and one data row.');
+            return;
+        }
+        
+        const headers = lines[0].split(',').map(h => h.trim().replace(/^['"]|['"]$/g, ''));
+        const dataRows = lines.slice(1).map(l => l.split(',').map(c => c.trim().replace(/^['"]|['"]$/g, '')));
+        
+        let colMap = [];
+        let useSequential = false;
+        
+        expectedObjCols.forEach((col, idx) => {
+            const rawCol = col.replace(' (Result)', '');
+            let hIdx = headers.findIndex(h => h === rawCol || h === col);
+            colMap.push(hIdx);
+        });
+        
+        if (colMap.every(idx => idx === -1)) {
+            if (headers.length >= expectedObjCols.length) {
+                useSequential = true;
+            } else {
+                alert(`Could not match headers. Expected objective columns like: ${expectedObjCols.join(', ')}`);
+                return;
+            }
+        }
+        
+        const table = document.getElementById(tableId);
+        const tbodyRows = table.querySelectorAll('tbody tr');
+        let importedCount = 0;
+        
+        tbodyRows.forEach((tr, rIdx) => {
+            if (rIdx < dataRows.length) {
+                const rowData = dataRows[rIdx];
+                const tds = Array.from(tr.querySelectorAll('td'));
+                const offset = tds.length - expectedObjCols.length;
+                
+                expectedObjCols.forEach((col, cIdx) => {
+                    const td = tds[offset + cIdx];
+                    if (td) {
+                        let val;
+                        if (useSequential) {
+                            const csvOffset = Math.max(0, rowData.length - expectedObjCols.length);
+                            val = rowData[csvOffset + cIdx];
+                        } else {
+                            if (colMap[cIdx] !== -1) {
+                                val = rowData[colMap[cIdx]];
+                            }
+                        }
+                        if (val !== undefined && val !== '') {
+                            td.textContent = val;
+                            td.dispatchEvent(new Event('input', { bubbles: true }));
+                        }
+                    }
+                });
+                importedCount++;
+            }
+        });
+        
+        if (importedCount > 0) {
+            alert(`Successfully imported results for ${importedCount} experiments.`);
+            
+            if (autoCommit) {
+                setTimeout(() => {
+                    const commitBtn = document.getElementById('commit-suggestions-btn');
+                    if (commitBtn && !commitBtn.disabled) {
+                        commitBtn.click();
+                    } else if (commitBtn && commitBtn.disabled) {
+                        console.warn('Commit button still disabled after import. Check for missing data.');
+                    }
+                }, 100);
+            }
+        }
+    };
+    reader.readAsText(file);
 }
 
 function initSettingsListeners() {
