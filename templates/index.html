@@ -57,7 +57,10 @@
         <section id="data-section" class="card hidden">
             <div class="card-header">
                 <h2 id="data-title">Loaded Data</h2>
-                <button id="export-main-btn" class="btn small">Export CSV</button>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button id="clear-data-btn" class="btn small" style="background-color: var(--danger-color); color: white; border-color: var(--danger-color);">Clear All Data</button>
+                    <button id="export-main-btn" class="btn small">Export CSV</button>
+                </div>
             </div>
             <div class="table-container">
                 <table id="main-table">
@@ -381,6 +384,7 @@
     <div id="loading-overlay" class="hidden">
         <div class="spinner"></div>
         <p id="loading-text">Optimizing...</p>
+        <button id="abort-calc-btn" class="btn small" style="margin-top: 1.5rem; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.4); backdrop-filter: blur(4px);">Abort & Restore View</button>
     </div>
 
     <script src="{{ url_for('static', filename='app_vM.js') }}"></script>

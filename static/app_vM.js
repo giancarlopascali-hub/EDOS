@@ -14,6 +14,7 @@ let saFeatureConfigs = {};   // Persistent store for SA feature definitions
 let suggestionsData = null;  // Latest results from the optimizer/generator
 let currentDoEFeatures = []; // Current DoE feature configs
 let currentDoEObjectives = []; // Current DoE objective configs
+let currentAbortController = null; // To cancel fetch requests
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -34,6 +35,39 @@ document.addEventListener('DOMContentLoaded', () => {
     initButtons();
     initSettingsListeners();
     initStrategyToggle();
+
+    safeAddListener('abort-calc-btn', 'click', () => {
+        if (currentAbortController) {
+            currentAbortController.abort();
+            currentAbortController = null;
+        }
+        document.getElementById('loading-overlay').classList.add('hidden');
+    });
+
+    safeAddListener('clear-data-btn', 'click', () => {
+        if (confirm('Are you sure you want to clear all loaded data and reset the module configurations? This cannot be undone.')) {
+            currentData = null;
+            currentColumns = [];
+            columnRoles = {};
+            objectiveConfigs = {};
+            boFeatureConfigs = {};
+            saFeatureConfigs = {};
+            suggestionsData = null;
+            currentDoEFeatures = [];
+            currentDoEObjectives = [];
+            
+            renderMainTable();
+            renderSetup();
+            
+            document.getElementById('data-section').classList.add('hidden');
+            document.getElementById('upload-section').classList.remove('hidden');
+            
+            // Clear results views
+            document.getElementById('doe-results-section').classList.add('hidden');
+            document.getElementById('results-section').classList.add('hidden');
+            document.getElementById('sa-results-container').classList.add('hidden');
+        }
+    });
 });
 
 function initStrategyToggle() {
@@ -1134,16 +1168,30 @@ async function runDoE() {
         max_runs: document.getElementById('doe-max-runs').value
     };
 
-    const res = await fetch('/doe', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ features: currentDoEFeatures, tweaks })
-    });
-    const result = await res.json();
-    if (result.error) return alert(result.error);
-    
-    suggestionsData = result.suggestions;
-    renderDoEResults(result.metrics);
+    document.getElementById('loading-text').textContent = "Generating designs...";
+    document.getElementById('loading-overlay').classList.remove('hidden');
+
+    currentAbortController = new AbortController();
+    try {
+        const res = await fetch('/doe', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ features: currentDoEFeatures, tweaks }),
+            signal: currentAbortController.signal
+        });
+        const result = await res.json();
+        document.getElementById('loading-overlay').classList.add('hidden');
+        if (result.error) return alert(result.error);
+        
+        suggestionsData = result.suggestions;
+        renderDoEResults(result.metrics);
+    } catch (err) {
+        document.getElementById('loading-overlay').classList.add('hidden');
+        if (err.name === 'AbortError') return console.log('DoE calculation aborted by user.');
+        alert("DoE Error: " + err.message);
+    } finally {
+        currentAbortController = null;
+    }
 }
 
 function renderDoEResults(metrics) {
@@ -1284,19 +1332,26 @@ async function runBO() {
     document.getElementById('loading-text').textContent = "Optimizing...";
     document.getElementById('loading-overlay').classList.remove('hidden');
 
+    currentAbortController = new AbortController();
     try {
         const res = await fetch('/optimize', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ data: currentData, columns: currentColumns, features, objectives, tweaks })
+            body: JSON.stringify({ data: currentData, columns: currentColumns, features, objectives, tweaks }),
+            signal: currentAbortController.signal
         });
         const result = await res.json();
-        
         document.getElementById('loading-overlay').classList.add('hidden');
-        
         if (result.error) return alert("Optimization Error: " + result.error);
         
         suggestionsData = result.suggestions;
+    } catch (err) {
+        document.getElementById('loading-overlay').classList.add('hidden');
+        if (err.name === 'AbortError') return console.log('BO calculation aborted by user.');
+        return alert("A critical error occurred during optimization: " + err.message);
+    } finally {
+        currentAbortController = null;
+    }
     
     // Merge configurations for plotting (don't clear)
     if (!objectiveConfigs) objectiveConfigs = {};
@@ -1361,11 +1416,6 @@ async function runBO() {
     section.classList.remove('hidden');
     renderTrendPlot();
     section.scrollIntoView({ behavior: 'smooth' });
-    } catch (err) {
-        document.getElementById('loading-overlay').classList.add('hidden');
-        alert("A critical error occurred during optimization: " + err.message);
-        console.error(err);
-    }
 }
 
 async function runSA() {
@@ -1408,11 +1458,14 @@ async function runSA() {
     
     // Clear old estimator results to avoid confusion with new analysis
     document.getElementById('sa-estimate-results').innerHTML = '';
+    
+    currentAbortController = new AbortController();
     try {
         const res = await fetch('/sa', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ data: currentData, columns: currentColumns, features, objectives, tweaks })
+            body: JSON.stringify({ data: currentData, columns: currentColumns, features, objectives, tweaks }),
+            signal: currentAbortController.signal
         });
         const result = await res.json();
         document.getElementById('loading-overlay').classList.add('hidden');
@@ -1421,8 +1474,11 @@ async function runSA() {
         renderSAResults(result);
     } catch(err) {
         document.getElementById('loading-overlay').classList.add('hidden');
+        if (err.name === 'AbortError') return console.log('SA calculation aborted by user.');
         alert("A critical error occurred during SA: " + err.message);
         console.error(err);
+    } finally {
+        currentAbortController = null;
     }
 }
 
