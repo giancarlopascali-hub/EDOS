@@ -12,6 +12,8 @@ let objectiveConfigs = {};   // Global store for objective types/targets
 let boFeatureConfigs = {};   // Persistent store for BO feature types/ranges
 let saFeatureConfigs = {};   // Persistent store for SA feature definitions
 let suggestionsData = null;  // Latest results from the optimizer/generator
+let currentDoEFeatures = []; // Current DoE feature configs
+let currentDoEObjectives = []; // Current DoE objective configs
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -735,19 +737,23 @@ function initButtons() {
             currentColumns = [...feats, ...objs];
             currentData = [];
             
-            // Set roles and configs
+            // Set roles
             feats.forEach(col => { columnRoles[col] = 'feature'; });
             objs.forEach(col => { columnRoles[col] = 'objective'; });
-            
-            // Basic config initialization to avoid crashes in setup renders
-            feats.forEach(f => {
-                if (!boFeatureConfigs[f]) boFeatureConfigs[f] = { type: 'continuous', range: '', included: true };
-                if (!saFeatureConfigs[f]) saFeatureConfigs[f] = { type: 'continuous', included: true };
-            });
-            objs.forEach(o => {
-                if (!objectiveConfigs[o]) objectiveConfigs[o] = { name: o, type: 'maximize', target: '', importance: (100/objs.length).toFixed(1), included: true };
-            });
         }
+
+        // Always sync feature/objective configs from the current DoE setup
+        currentDoEFeatures.forEach(f => {
+            if (currentColumns.includes(f.name)) {
+                boFeatureConfigs[f.name] = { type: f.type, range: f.range, included: true };
+                saFeatureConfigs[f.name] = { type: f.type, included: true };
+            }
+        });
+        currentDoEObjectives.forEach(o => {
+            if (currentColumns.includes(o.name) && !objectiveConfigs[o.name]) {
+                objectiveConfigs[o.name] = { name: o.name, type: 'maximize', target: '', importance: (100/objs.length).toFixed(1), included: true };
+            }
+        });
 
         // Map column names to indices
         const colIndices = {};
@@ -1112,7 +1118,7 @@ window.updatePlaceholder = (select) => {
 };
 
 async function runDoE() {
-    const features = Array.from(document.querySelectorAll('#doe-features-list tr')).map(tr => ({
+    currentDoEFeatures = Array.from(document.querySelectorAll('#doe-features-list tr')).map(tr => ({
         name: tr.querySelector('.doe-f-name').value,
         type: tr.querySelector('.doe-f-type').value,
         range: tr.querySelector('.doe-f-range').value
@@ -1131,7 +1137,7 @@ async function runDoE() {
     const res = await fetch('/doe', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ features, tweaks })
+        body: JSON.stringify({ features: currentDoEFeatures, tweaks })
     });
     const result = await res.json();
     if (result.error) return alert(result.error);
