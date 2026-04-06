@@ -721,6 +721,78 @@ function initButtons() {
             document.getElementById('results-section').classList.add('hidden');
         }
     });
+
+    safeAddListener('doe-commit-suggestions-btn', 'click', () => {
+        if (!suggestionsData || suggestionsData.length === 0) return;
+        const rows = document.querySelectorAll('#doe-results-body tr');
+        if (rows.length === 0) return;
+
+        const feats = Object.keys(suggestionsData[0]);
+        const objs = currentDoEObjectives.map(o => o.name);
+
+        // Initialize dataset if it doesn't exist
+        if (!currentData || currentColumns.length === 0) {
+            currentColumns = [...feats, ...objs];
+            currentData = [];
+            
+            // Set roles and configs
+            feats.forEach(col => { columnRoles[col] = 'feature'; });
+            objs.forEach(col => { columnRoles[col] = 'objective'; });
+            
+            // Basic config initialization to avoid crashes in setup renders
+            feats.forEach(f => {
+                if (!boFeatureConfigs[f]) boFeatureConfigs[f] = { type: 'continuous', range: '', included: true };
+                if (!saFeatureConfigs[f]) saFeatureConfigs[f] = { type: 'continuous', included: true };
+            });
+            objs.forEach(o => {
+                if (!objectiveConfigs[o]) objectiveConfigs[o] = { name: o, type: 'maximize', target: '', importance: (100/objs.length).toFixed(1), included: true };
+            });
+        }
+
+        // Map column names to indices
+        const colIndices = {};
+        let missing = [];
+        [...feats, ...objs].forEach(name => {
+            const idx = currentColumns.indexOf(name);
+            if (idx === -1) missing.push(name);
+            else colIndices[name] = idx;
+        });
+
+        if (missing.length > 0) {
+            alert(`Cannot commit: The current main dataset is missing columns: ${missing.join(', ')}`);
+            return;
+        }
+
+        let addedCount = 0;
+        rows.forEach(tr => {
+            const cells = tr.querySelectorAll('td');
+            const newRow = new Array(currentColumns.length).fill('');
+            
+            // Copy feature values
+            feats.forEach((name, i) => {
+                newRow[colIndices[name]] = cells[i].textContent.trim();
+            });
+            
+            // Copy (potentially empty) objective values
+            objs.forEach((name, i) => {
+                const cellIdx = feats.length + i;
+                const val = cells[cellIdx].textContent.trim();
+                newRow[colIndices[name]] = (val === 'N/D') ? '' : val;
+            });
+
+            currentData.push(newRow);
+            addedCount++;
+        });
+
+        if (addedCount > 0) {
+            renderMainTable();
+            renderSetup(); // Ensure setups are refreshed with new data ranges
+            alert(`Added ${addedCount} experiments to the main dataset.`);
+            document.getElementById('doe-results-section').classList.add('hidden');
+            document.getElementById('data-section').classList.remove('hidden');
+            switchModule('bo'); 
+        }
+    });
     
     safeAddListener('doe-export-btn', 'click', () => {
         if (!suggestionsData || suggestionsData.length === 0) return;
@@ -1150,6 +1222,28 @@ function renderDoEResults(metrics) {
     
     section.classList.remove('hidden');
     section.scrollIntoView({ behavior: 'smooth' });
+
+    // Enable/Disable commit button based on objective completion
+    const checkDoECommitReadiness = () => {
+        const commitBtn = document.getElementById('doe-commit-suggestions-btn');
+        const objCells = body.querySelectorAll('.obj-input-cell');
+        let allFilled = true;
+        objCells.forEach(td => {
+            const val = td.textContent.trim();
+            if (val === '' || isNaN(parseFloat(val))) allFilled = false;
+        });
+        if (commitBtn) {
+            commitBtn.disabled = !allFilled;
+            commitBtn.style.opacity = allFilled ? '1' : '0.5';
+            commitBtn.style.cursor = allFilled ? 'pointer' : 'not-allowed';
+        }
+    };
+
+    body.querySelectorAll('.obj-input-cell, .feat-input-cell').forEach(cell => {
+        cell.addEventListener('input', checkDoECommitReadiness);
+        cell.addEventListener('blur', checkDoECommitReadiness);
+    });
+    checkDoECommitReadiness();
 }
 
 async function runBO() {
