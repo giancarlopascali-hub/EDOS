@@ -56,6 +56,22 @@ document.addEventListener('DOMContentLoaded', () => {
             currentDoEFeatures = [];
             currentDoEObjectives = [];
             
+            // Clear result tables
+            const resultsTableBody = document.getElementById('results-table-body');
+            if (resultsTableBody) resultsTableBody.innerHTML = '';
+            const doeResultsBody = document.getElementById('doe-results-body');
+            if (doeResultsBody) doeResultsBody.innerHTML = '';
+
+            // Purge plots
+            try { 
+                if (document.getElementById('trend-plot')) Plotly.purge('trend-plot');
+                if (document.getElementById('pareto-plot')) Plotly.purge('pareto-plot');
+                if (document.getElementById('sa-num-corr')) Plotly.purge('sa-num-corr');
+                document.querySelectorAll('[id^="sa-parcoords-"]').forEach(el => Plotly.purge(el.id));
+                document.querySelectorAll('[id^="sa-bar-"]').forEach(el => Plotly.purge(el.id));
+                document.querySelectorAll('[id^="sa-shap-"]').forEach(el => Plotly.purge(el.id));
+            } catch(e) { console.error("Error purging plots:", e); }
+            
             renderMainTable();
             renderSetup();
             
@@ -66,6 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('doe-results-section').classList.add('hidden');
             document.getElementById('results-section').classList.add('hidden');
             document.getElementById('sa-results-container').classList.add('hidden');
+            if (document.getElementById('bo-visuals')) document.getElementById('bo-visuals').classList.add('hidden');
         }
     });
 });
@@ -270,6 +287,8 @@ function renderMainTable() {
     const head = document.getElementById('main-table-head');
     const body = document.getElementById('main-table-body');
     
+    if (!head || !body) return;
+
     let headHtml = '<tr>';
     currentColumns.forEach(col => {
         const role = columnRoles[col];
@@ -286,9 +305,11 @@ function renderMainTable() {
     head.innerHTML = headHtml;
 
     let bodyHtml = '';
-    currentData.forEach((row, rowIdx) => {
-        bodyHtml += '<tr>' + row.map((v, colIdx) => `<td contenteditable="true" onblur="updateCellData(${rowIdx}, ${colIdx}, this.textContent)">${v}</td>`).join('') + '</tr>';
-    });
+    if (currentData) {
+        currentData.forEach((row, rowIdx) => {
+            bodyHtml += '<tr>' + row.map((v, colIdx) => `<td contenteditable="true" onblur="updateCellData(${rowIdx}, ${colIdx}, this.textContent)">${v}</td>`).join('') + '</tr>';
+        });
+    }
     body.innerHTML = bodyHtml;
 }
 
@@ -1909,7 +1930,12 @@ async function runEstimate() {
 }
 
 function renderTrendPlot() {
-    if (!currentData || currentData.length === 0) return;
+    if (!currentData || currentData.length === 0) {
+        try { Plotly.purge('trend-plot'); } catch(e) {}
+        const visuals = document.getElementById('bo-visuals');
+        if (visuals) visuals.classList.add('hidden');
+        return;
+    }
     const objCols = currentColumns.filter(c => columnRoles[c] === 'objective');
     
     const traces = objCols.map(col => {
@@ -2005,6 +2031,7 @@ function renderParetoPlot() {
     const titleEl = document.getElementById('pareto-title');
 
     if (objCols.length < 2) {
+        try { Plotly.purge('pareto-plot'); } catch(e) {}
         section.classList.add('hidden');
         return;
     }
@@ -2018,6 +2045,7 @@ function renderParetoPlot() {
     });
 
     if (completeData.length === 0) {
+        try { Plotly.purge('pareto-plot'); } catch(e) {}
         section.classList.add('hidden');
         return;
     }
