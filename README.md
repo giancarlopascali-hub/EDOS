@@ -26,11 +26,11 @@ pinned: false
 
 1. **Web-app**: You can use the most updated version of the app online on [EDOS](https://realgcp-edos-app.hf.space/) page.
 2. **Download**: You can download the latest standalone version from the [Releases](https://github.com/giancarlopascali-hub/EDOS/releases) page. This version is not up to date as the online one, but gives the freedom of no internet connection required to run. New releases will be available in the future, with several fixes and improvement, to align with the online version.
-3. **Extract**: Right-click the `EDOS_v1.0_Windows.zip` file and select "Extract All...".
+3. **Extract**: Right-click the `EDOS_v3.1_Standalone.zip` file and select "Extract All...".
 4. **Run**: 
    - Open the extracted folder.
-   - **Note**: The application lives entirely within its folder structure; do not move the `.exe` file out of the `EDOS_v1.0` folder.
-   - Double-click **`EDOS_v1.0.exe`**.
+   - **Note**: The application lives entirely within its folder structure; do not move the `.exe` file out of the `EDOS_v3.1` folder.
+   - Double-click **`EDOS_v3.1.exe`**.
 5. **Access**: The application will automatically start a local server. If your browser doesn't open automatically, go to `http://127.0.0.1:5000`.
 6. **Shutdown**: To close the application properly, press the **"Shutdown"** button within the web interface before closing the window.
 

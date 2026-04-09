@@ -149,6 +149,7 @@ def optimize():
                 import re
                 matches = re.findall(r"[-+]?\d*\.?\d+", f_range)
                 low, high = sorted([float(matches[0]), float(matches[1])]) if len(matches) >= 2 else (0.0, 1.0)
+                if low == high: high = low + abs(low)*0.01 + 0.1
                 feat_vals = pd.to_numeric(df[name], errors='coerce').fillna(0).values
                 train_x_list.append(feat_vals)
                 bounds.append([low, high])
@@ -157,9 +158,11 @@ def optimize():
                 clean_range = f_range.replace('[', '').replace(']', '')
                 values = sorted([float(x.strip()) for x in clean_range.split(',') if x.strip()])
                 if not values: values = [0.0]
+                low, high = values[0], values[-1]
+                if low == high: high = low + abs(low)*0.01 + 0.1
                 feat_vals = pd.to_numeric(df[name], errors='coerce').fillna(values[0]).values
                 train_x_list.append(feat_vals)
-                bounds.append([values[0], values[-1]])
+                bounds.append([low, high])
                 feature_levels.append(values)
             elif f['type'] == 'regular':
                 import re
@@ -172,16 +175,20 @@ def optimize():
                     values = np.linspace(low, high, 10).tolist()
                 else:
                     values = [0.0]
+                low, high = values[0], values[-1]
+                if low == high: high = low + abs(low)*0.01 + 0.1
                 feat_vals = pd.to_numeric(df[name], errors='coerce').fillna(values[0]).values
                 train_x_list.append(feat_vals)
-                bounds.append([values[0], values[-1]])
+                bounds.append([low, high])
                 feature_levels.append(values)
             elif f['type'] == 'categorical':
                 choices = [str(x).strip() for x in f_range.split(',')]
                 mapping = {choice: i for i, choice in enumerate(choices)}
                 encoded = df[name].astype(str).map(mapping).fillna(0).values
                 train_x_list.append(encoded)
-                bounds.append([0, len(choices) - 1])
+                low, high = 0, len(choices) - 1
+                if low == high: high = low + 0.1
+                bounds.append([low, high])
                 categorical_features.append(len(train_x_list) - 1)
                 feature_levels.append(list(range(len(choices))))
 
@@ -1155,13 +1162,14 @@ if __name__ == '__main__':
     import os
     port = int(os.environ.get("PORT", 7860))
     
-    # Only open browser if running locally on default port
-    if port == 5000:
+    # Open browser if running as a standalone bundle or if running locally on default port
+    if getattr(sys, 'frozen', False) or port == 5000:
         import threading
         import webbrowser
         def open_browser():
             import time
             time.sleep(1.5)
+            # Use the actual port set above
             webbrowser.open(f'http://127.0.0.1:{port}')
         threading.Thread(target=open_browser, daemon=True).start()
         
