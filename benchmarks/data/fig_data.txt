@@ -1,0 +1,249 @@
+Page 95:
+product, to support the optimization of a secondary substrate. This is done by quantifying the 
+analytical signals, for both products at each experimental point, while only presenting the yield 
+of the relevant product to the optimizer at any given time. Once the optimization of the ﬁrst 
+substrate reached a satisfactory outcome, all previously collected data points were  submitted 
+as initial training data for the side-product optimization. While this reused data could be 
+considered biased, since it originates from a directed optimization process, the use of a 
+sudiciently large Latin Hypercube Sampling (LHS) at the beginning ensures broad coverage of the 
+design space, helping to mitigate this concern. The second modiﬁcation addresses a common 
+challenge in HITL optimization. Batching too few points reduces the beneﬁt of automation, while 
+batching too many can make Bayesian optimization less edicient. To address this, a dual 
+acquisition strategy was implemented.39,40 The ﬁrst two points in each batch are selected using a 
+standard acquisition function, such as Expected Hypervolume Improvement (EHVI), focusing on 
+areas likely to produce strong results. These points are then marked as “in-process” and passed 
+to a secondary acquisition function that is purely exploratory, such as integrated posterior 
+variance. This function selects additional points in regions where the model’s uncertainty is high. 
+By combining these two approaches, the system is able to pursue promising leads while also 
+expanding its knowledge of less-explored regions, achieving both edicient data collection and 
+robust model improvement. 
+S2.1.3.6. Multi Task Optimization of Product A and product B 
+This multitask optimization strategy utilized for the Buchwald-Hartwig amination (Case study 5, 
+Section S3.6), based on the assumption that structurally related synthons share, to some extent, 
+similar optimal reaction conditions. While such correlations may be disrupted by diderences in 
+steric or electronic properties, the presence of a moderate relationship can signiﬁcantly improve 
+optimization ediciency by allowing transfer of knowledge between tasks. In contrast, if no 
+meaningful correlation exists, the multitask model will struggle to extract cross-task patterns, 
+yielding results no better than independent single-task optimizations. In this case study, the ﬁrst 
+synthon (Task 1) is optimized using a standard single-task GP. Once this initial campaign is 
+complete, the collected data is labeled with task index t = 1. A small number of seed experiments 
+are then performed for the second synthon, labeled with t = 2, and the combined dataset is 
+modeled using a multitask GP based on the Intrinsic Co-Regionalization Model (ICM)41,42 kernel. 
+The multitask kernel is deﬁned as: 
+ 
+𝑘z(𝑥, 𝑡), (𝑥’, 𝑡’){ = 𝑘input(𝑥, 𝑥’) ⋅𝐵!,!’ 
+ 
+Here, 𝑥∈𝑅I represents the shared input features, 𝑡 ∈{1, 2} denotes the task index (synthon 
+identity), 𝑘input is a kernel over the input space (defaulting to RBF), and 𝐵∈𝑅O×O is the task 
+covariance matrix learned from data. This formulation enables the model to capture both within-
+task trends and between-task correlations.43 The full covariance matrix 𝐾∈𝑅"O×"O encodes all 
+observations jointly: 
+𝑦∼𝒩(0, 𝐾+ σN𝐼) 
+ 
+where σN is the observation noise variance. Once trained, the multitask GP enables shared 
+statistical strength across tasks. For the optimization of the second synthon, candidate points 
+are generated using a ﬁxed-feature acquisition strategy. Speciﬁcally, the acquisition function is 
+
+---
+Page 96:
+evaluated only at t = 2, selecting new points for the second synthon while leveraging knowledge 
+gained from Task 1: 
+𝑥∗= arg max
+)∈𝒳α z(𝑥, 𝑡= 2); 𝒟{ 
+In this application, the method achieved high yields for the second synthon within only a handful 
+of experiments, demonstrating the practical advantage of multitask learning when structural or 
+mechanistic similarities exist between optimization targets. 
+S2.1.3.7. Decoupled Objective Optimization with Multi-Objective TradeoW Mapping 
+And ﬁnally, for case study 8 involving the chiral 2+2 cycloaddition ,(Case study 6, Section S3.7), a 
+hybrid strategy was employed to balance the use of batching and human-in-the-loop 
+methodology without compromising the ediciency of the optimization. In this approach, 
+suggested experimental points were selected by maximizing the output of individual Gaussian 
+processes trained separately for each target value. This means that one experiment was 
+proposed per target, each chosen to independently optimize diastereomeric ratio, yield, or 
+enantioselectivity. To complement these, a set of additional points was selected using a Pareto-
+based approach, speciﬁcally the qLogNParEGO algorithm,44,45 in order to map out the trade-od 
+space between the multiple objectives. This strategy provides the experimentalist with granular 
+control over which tradeod between objectives is acceptable when deciding on the conditions to 
+carry forward into scale-up.21 It emphasizes that even when high-throughput or fully in-line 
+analytics are unavailable, automated experimentation can remain an edective and ﬂexible tool 
+when combined with intelligent batching and clear prioritization of objectives. 
+ 
+ 
+
+---
+Page 97:
+S2.2. 
+Benchmarking 
+Benchmarking is essential as a smoke test for the Bayesian optimization methodologies 
+employed across campaigns. Detailed benchmarking results are provided in the respective 
+campaign sections; this section outlines the overarching benchmarking framework. Benchmarks 
+were performed using datasets from both the Olympus package46 (developed by the Aspuru-
+Guzik group) and the Minerva package (by Schwaller and co-workers), covering a wide range of 
+realistic chemical optimization tasks. The benchmarking architecture follows an oracle-based 
+model: each BO strategy queries a ground-truth model, trained on a literature database. This 
+oracle framework enables rapid and repeatable assessment of performance. To accelerate 
+testing, the entire pipeline is parallelized using a multiprocessing approach, allowing large 
+sweeps of parameter conﬁgurations to be tested in a fraction of the time. A full factorial design is 
+used to systematically explore the space of selectable options, such as surrogate model, 
+acquisition function, and encoding strategy, enabling correlation analyses between these 
+choices and the observed optimization performance. 
+S2.2.1. 
+Choice of data and Surrogate models 
+The benchmarking data was selected to closely mimic the type of data expected from real 
+experimental campaigns. To that end, three key criteria were used: (1) the dataset must contain 
+chemical reaction data, (2) it must include at least one categorical variable, and (3) it must feature 
+at least two optimization targets. Among the available options, datasets related to Suzuki–
+Miyaura couplings in the Olympus package46 met all criteria. After initial exploratory analysis, 
+Suzuki I and Suzuki IV were selected as the primary benchmarking datasets. A variety of surrogate 
+models were evaluated for use as the oracle in the benchmarking framework. These included 
+Random Forest Regressor, Gaussian Process, Multi-linear Regression, Ridge Regression, and 
+second-order polynomial-corrected Linear Regression27 To better reﬂect real-world BO behavior, 
+and to improve surrogate accuracy, the data was subdivided by unique combinations of 
+categorical variables. Separate surrogate models were then trained on each continuous 
+subspace, using min-max scaling to normalize all features to the [0,1] range.47 Model evaluation 
+revealed that both Random Forest and Gaussian Process regressors performed well in terms of 
+predictive accuracy.  However, due to the slight better performance exhibited by the RF models 
+they were chosen as the oracle models.48 
+
+---
+Page 98:
+ 
+ 
+Figure S2.2. Emulator Performance on Benchmark Datasets. Evaluation of oracle model performance 
+on the datasets used in benchmarking. The left panel corresponds to Suzuki_1, and the right panel to
+Suzuki_iv. In each, the blue bars represent the average R² score across the training set space, while the 
+orange bars show the corresponding average mean squared error (MSE), providing a comparative measure 
+of predictive accuracy and model ﬁt quality. 
+
+---
+Page 99:
+ 
+S2.2.2. 
+Emulator Engine 
+The emulator engine is designed to simulate experimental outcomes by interfacing with pre-
+trained surrogate models. It takes as input the name of the dataset to emulate and the choice of 
+oracle model. The engine begins by splitting the dataset into sub-datasets based on predeﬁned 
+categorical columns, edectively isolating regions of the design space with consistent categorical 
+settings. A separate surrogate model is then trained for each sub-dataset and stored in memory 
+for edicient querying. The user can also specify a desired noise level to simulate experimental 
+uncertainty. During evaluation, the Bayesian optimizer submits a structured input containing one 
+or more 1-D tensors representing the design points to be evaluated. The emulator engine 
+automatically identiﬁes the categorical values in each input, routes the request to the 
+corresponding surrogate model, and returns the predicted result. If a noise level has been 
+speciﬁed, the emulator applies normally sampled noise to the result. As the normally sampled 
+noise is additive the optimum of that calculation is higher than with no noise. 
+S2.2.3. 
+Benchmarking engine 
+The benchmarking engine operates from a YAML input ﬁle, where each benchmark conﬁguration 
+is deﬁned. It constructs the full benchmarking space by computing the Cartesian product of all 
+speciﬁed parameters, ensuring comprehensive coverage of possible settings. Each conﬁguration 
+is submitted as a task to a multiprocessing queue, where it is processed independently to 
+maximize ediciency. Each benchmark run uses the same modular communication infrastructure 
+as the robotic experimentation system. Upon execution, the benchmarking process loads the 
+speciﬁed emulator and BO methodology, then proceeds with the optimization. Outputs are 
+recorded in a structured format: results are saved as CSV ﬁles, while the corresponding input 
+parameters are stored in a JSON ﬁle to ensure traceability and reproducibility. Additionally, the 
+benchmarking engine manages run-time notiﬁcations, alerting the user when a benchmark starts 
+and ﬁnishes. To support robustness during long or interrupted campaigns, the engine also 
+includes a restart-aware feature that skips previously completed runs, allowing seamless 
+continuation of benchmarking without duplication. 
+S2.2.4. 
+Benchmarking Metrics 
+Performance of each benchmark is evaluated by ﬁrst aggregating the results into a structured 
+dataframe that includes both the selected parameters and the evolution of the target metrics over 
+experiment number. From these traces, the following performance metrics are computed: 
+S2.2.4.1. Maximum target value achieved 
+𝑦%() =
+max
++∈{',…,b} 𝑦+ 
+𝑤ℎere 𝑦+ is the observed value of the target at experiment i, and N is the total number of 
+experiments. A larger 𝑦%() corresponds to a better optimisation, as the ML is able to reach a 
+higher target value. 
+S2.2.4.2. Normalized index of maximum 
+Index%() =
+arg max
++
+𝑦+
+𝑁
+ 
+Lower value indicates faster convergence toward optimal conditions. 
+
+---
+Page 100:
+S2.2.4.3. Multi task optimisation 
+In the case of multi-task optimization, a slightly diderent approach is used. Let 𝑦+
+MT and 𝑦+
+ST be 
+the target values observed at experiment i for the multi-task and single-task (non-warm-started) 
+optimization runs, respectively. The improvement from warm-starting is then visualized by 
+plotting the two curves: 
+{𝑦+
+MT}𝑖= 1bMT vs {𝑦+
+ST}𝑖= 1bST 
+This qualitative comparison highlights diderences in convergence rate and achievable optimum 
+between the two approaches. Quantitative comparisons (e.g., time to reach a threshold or area 
+under the curve) can also be computed if desired. 
+S2.2.5. 
+Benchmark Disclaimer 
+The benchmarks reveal minimal sensitivity to the choice of most hyperparameters, as the 
+optimization tends to reach high target values rapidly across a wide range of settings. 
+Consequently, for many cases, parameters are selected either based on median performance or 
+according to practical considerations, such as ease of implementation during experimentation. 
+S2.2.6. 
+Hardware 
+Benchmarks were performed locally on an Apple Mac mini equipped with an M2 Pro processor 
+(10 cores) and 16 GB of RAM, running macOS Sequoia 15.4.1. While the benchmarking engine is 
+fully compatible with high-performance computing (HPC) environments and could be deployed 
+with minimal modiﬁcations, the computational load of the tasks was sudiciently manageable to 
+be executed on a local machine, making HPC deployment unnecessary for this study. 
+ 
+ 
+
+---
+Page 101:
+S2.3. 
+Further Data Analysis 
+Each campaign’s data is further analyzed using standard statistical techniques. While the 
+datasets generated through Bayesian optimization may be biased toward exploitation of speciﬁc 
+regions of the design space, it is not yet clear to what extent this bias adects the validity of 
+downstream statistical analyses. Nevertheless, forgoing further analysis would represent a 
+missed opportunity to extract deeper insights into the underlying chemical systems. As with the 
+previous sections, this serves as an introduction; detailed data analyses are presented in the 
+corresponding subsections of each campaign. Below is a detailed list of techniques applied and 
+what they seek to showcase. 
+S2.3.1. 
+Targets Over Experiment Progress 
+Scatter plots of the tracked objectives and the hypervolume, calculated as the area of the non-
+dominated partitioning using 0n as the reference point, are included to visualize the progression 
+of each optimization campaign. These plots provide an overview of how the model explores and 
+exploits the design space over time, odering insight into whether the surrogate model is 
+edectively learning and navigating the underlying chemical system. 
+S2.3.2. 
+Correlational Analysis of Input Features and Targets 
+Although correlational analysis of the input space may not always yield mechanistically 
+meaningful interpretations, particularly in a dataset biased by optimization, it still oders valuable 
+insight into how the optimizer perceived interactions between features. This is especially relevant 
+for Gaussian Process (GP) models, where the kernel relies on assumptions about correlation 
+structure in the input space.49 For continuous variables, both Pearson’s R and Spearman’s rank 
+correlation coedicients are calculated to assess linear and monotonic relationships, 
+respectively.50 For categorical feature, we treat each category as a separate dummy variable and 
+compute edect sizes using Eta squared (η²) and Omega squared (ω²) to quantify the variance in 
+the objective explained by each categorical value.51 This multi-level analysis helps identify which 
+features, whether continuous or categorical, had the largest inﬂuence on the optimization 
+outcome, and reveals interactions between categorical inputs that may have guided the 
+optimizer’s selections. 
+S2.3.3. 
+Target Performance as a Function of Distance From Optimum 
+The ﬁrst approach visualizes how objective values decay with increasing distance from the 
+predicted optimum. For each experimental point xi, we compute a generalized distance Di from 
+the optimal point x* as: 
+ 
+ 
+𝐷+ = |𝒙+cont −𝑥∗cont|2 + λ ⋅𝑁cat,+ 
+Where 𝒙𝒊
+A?"! and 𝒙∗A?"! are the vectors of continuous variables for the i-th point and the optimum, 
+respectively. 𝑁cat,+ is the number of categorical mismatches between point i and the optimum. 𝜆 
+is a user-deﬁned penalty weight for categorical mismatches (set to 1). Plotting the observed 
+objective value against Di reveals how rapidly performance deteriorates as one moves away from 
+the optimum. A steep decline indicates a sensitive or narrow optimum, while a ﬂatter proﬁle 
+suggests robustness to perturbations. 

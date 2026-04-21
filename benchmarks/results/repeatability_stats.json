@@ -1,0 +1,56 @@
+[
+  {
+    "dataset": "snar",
+    "algorithm": "EDOS (gradient)",
+    "mean_best": 0.626,
+    "std_best": 0.3434,
+    "cv_pct": 54.85,
+    "global_opt": 0.24,
+    "n_runs": 5
+  },
+  {
+    "dataset": "snar",
+    "algorithm": "EDOS (EDBO+ like)",
+    "mean_best": 0.82,
+    "std_best": 0.3469,
+    "cv_pct": 42.3,
+    "global_opt": 0.24,
+    "n_runs": 5
+  },
+  {
+    "dataset": "benzylation",
+    "algorithm": "EDOS (gradient)",
+    "mean_best": 4.36,
+    "std_best": 1.019,
+    "cv_pct": 23.37,
+    "global_opt": 2.2,
+    "n_runs": 5
+  },
+  {
+    "dataset": "benzylation",
+    "algorithm": "EDOS (EDBO+ like)",
+    "mean_best": 3.44,
+    "std_best": 0.8499,
+    "cv_pct": 24.71,
+    "global_opt": 2.2,
+    "n_runs": 5
+  },
+  {
+    "dataset": "suzuki",
+    "algorithm": "EDOS (gradient)",
+    "mean_best": 75.86,
+    "std_best": 18.305,
+    "cv_pct": 24.13,
+    "global_opt": 96.9,
+    "n_runs": 5
+  },
+  {
+    "dataset": "suzuki",
+    "algorithm": "EDOS (EDBO+ like)",
+    "mean_best": 80.42,
+    "std_best": 13.4806,
+    "cv_pct": 16.76,
+    "global_opt": 96.9,
+    "n_runs": 5
+  }
+]
