@@ -507,7 +507,92 @@ def optimize():
             suggestions.append(suggestion)
             existing_fps.add(get_fingerprint(suggestion))
 
-        return jsonify({'suggestions': suggestions})
+        # 5. Model Performance (Bootstrapping R2)
+        performance_results = {}
+        if not df.empty and train_x.shape[0] >= 5:
+            from sklearn.model_selection import KFold
+            n_splits = 5
+            kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+            
+            for i, obj_cfg in enumerate(objectives_config):
+                obj_name = obj_cfg['name']
+                y_all_np = train_y[:, i:i+1].cpu().numpy()
+                x_all_np = train_x.cpu().numpy()
+                
+                all_preds = []
+                all_true = []
+                
+                for train_idx, test_idx in kf.split(x_all_np):
+                    x_tr, x_te = torch.tensor(x_all_np[train_idx], dtype=torch.float32).to(DEVICE), torch.tensor(x_all_np[test_idx], dtype=torch.float32).to(DEVICE)
+                    y_tr, y_te = torch.tensor(y_all_np[train_idx], dtype=torch.float32).to(DEVICE), torch.tensor(y_all_np[test_idx], dtype=torch.float32).to(DEVICE)
+                    
+                    try:
+                        m_tmp = build_single_model(x_tr, y_tr)
+                        mll_tmp = ExactMarginalLogLikelihood(m_tmp.likelihood, m_tmp).to(COMPUTE_DEVICE)
+                        fit_gpytorch_mll(mll_tmp)
+                        
+                        m_tmp.eval()
+                        with torch.no_grad():
+                            # Use posterior to get un-standardized means
+                            post = m_tmp.posterior(x_te.to(COMPUTE_DEVICE))
+                            preds = post.mean.cpu().numpy().flatten()
+                            all_preds.extend(preds)
+                            all_true.extend(y_all_np[test_idx].flatten())
+                    except Exception as ex:
+                        print(f"Error in CV for {obj_name}: {ex}")
+                        all_preds.extend([np.mean(y_all_np[train_idx])] * len(test_idx))
+                        all_true.extend(y_all_np[test_idx].flatten())
+                
+                all_preds = np.array(all_preds)
+                all_true = np.array(all_true)
+                ss_res = np.sum((all_true - all_preds)**2)
+                ss_tot = np.sum((all_true - np.mean(all_true))**2)
+                r2 = 1 - (ss_res / (ss_tot + 1e-9))
+                
+                avg_r2 = max(0, r2)
+                performance_results[obj_name] = {
+                    'r2': round(float(avg_r2), 3),
+                    'status': 'Good' if avg_r2 > 0.7 else ('Limited' if avg_r2 >= 0.4 else 'Poor')
+                }
+            
+            # Global Success R2 if MOO
+            if train_y.shape[1] > 1:
+                weights_np = weights_t.cpu().numpy()
+                y_np = train_y.cpu().numpy()
+                y_min, y_max = y_np.min(axis=0), y_np.max(axis=0)
+                y_norm = (y_np - y_min) / (y_max - y_min + 1e-9)
+                global_y = np.average(y_norm, axis=1, weights=weights_np)
+                
+                all_preds_g = []
+                all_true_g = []
+                for train_idx, test_idx in kf.split(x_all_np):
+                    x_tr, x_te = torch.tensor(x_all_np[train_idx], dtype=torch.float32).to(DEVICE), torch.tensor(x_all_np[test_idx], dtype=torch.float32).to(DEVICE)
+                    y_tr_g = torch.tensor(global_y[train_idx], dtype=torch.float32).unsqueeze(-1).to(DEVICE)
+                    
+                    try:
+                        m_tmp = build_single_model(x_tr, y_tr_g)
+                        mll_tmp = ExactMarginalLogLikelihood(m_tmp.likelihood, m_tmp).to(COMPUTE_DEVICE)
+                        fit_gpytorch_mll(mll_tmp)
+                        m_tmp.eval()
+                        with torch.no_grad():
+                            post = m_tmp.posterior(x_te.to(COMPUTE_DEVICE))
+                            preds = post.mean.cpu().numpy().flatten()
+                            all_preds_g.extend(preds)
+                            all_true_g.extend(global_y[test_idx].flatten())
+                    except:
+                        all_preds_g.extend([np.mean(global_y[train_idx])] * len(test_idx))
+                        all_true_g.extend(global_y[test_idx].flatten())
+                
+                ss_res_g = np.sum((np.array(all_true_g) - np.array(all_preds_g))**2)
+                ss_tot_g = np.sum((np.array(all_true_g) - np.mean(all_true_g))**2)
+                r2_g = 1 - (ss_res_g / (ss_tot_g + 1e-9))
+                avg_r2_g = max(0, r2_g)
+                performance_results['global_success'] = {
+                    'r2': round(float(avg_r2_g), 3),
+                    'status': 'Good' if avg_r2_g > 0.7 else ('Limited' if avg_r2_g >= 0.4 else 'Poor')
+                }
+
+        return jsonify({'suggestions': suggestions, 'performance': performance_results})
 
     except Exception as e:
         import traceback
@@ -788,7 +873,191 @@ def run_doe():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
-@app.route('/sa', methods=['POST'])
+@app.route('/estimate_bo', methods=['POST'])
+def estimate_bo():
+    try:
+        req_data = request.get_json()
+        data = req_data.get('data')
+        columns = req_data.get('columns')
+        input_values = req_data.get('inputs') # {feat_name: val}
+        features_config = req_data.get('features', [])
+        objectives_config = req_data.get('objectives', [])
+        tweaks = req_data.get('tweaks', {})
+        
+        df = pd.DataFrame(data, columns=columns)
+        
+        # Prepare Features (X) - Same logic as /optimize
+        train_x_list = []
+        bounds = [] 
+        categorical_features = []
+        
+        for i, f in enumerate(features_config):
+            name = f['name']
+            f_range = f['range']
+            
+            if f['type'] == 'continuous':
+                matches = re.findall(r"[-+]?\d*\.?\d+", f_range)
+                low, high = sorted([float(matches[0]), float(matches[1])]) if len(matches) >= 2 else (0.0, 1.0)
+                if low == high: high = low + abs(low)*0.01 + 0.1
+                feat_vals = pd.to_numeric(df[name], errors='coerce').fillna(0).values
+                train_x_list.append(feat_vals)
+                bounds.append([low, high])
+            elif f['type'] in ['discrete', 'regular']:
+                matches = re.findall(r"[-+]?\d*\.?\d+", f_range)
+                if f['type'] == 'discrete':
+                    values = sorted([float(x.strip()) for x in f_range.replace('[','').replace(']','').split(',') if x.strip()])
+                else:
+                    if len(matches) >= 3:
+                        low, high, steps = sorted([float(matches[0]), float(matches[1])]) + [int(float(matches[2]))]
+                        values = np.linspace(low, high, steps).tolist()
+                    else:
+                        values = [0.0]
+                low, high = values[0], values[-1]
+                if low == high: high = low + abs(low)*0.01 + 0.1
+                feat_vals = pd.to_numeric(df[name], errors='coerce').fillna(values[0]).values
+                train_x_list.append(feat_vals)
+                bounds.append([low, high])
+            elif f['type'] == 'categorical':
+                choices = [str(x).strip() for x in f_range.split(',')]
+                mapping = {choice: i for i, choice in enumerate(choices)}
+                encoded = df[name].astype(str).map(mapping).fillna(0).values
+                train_x_list.append(encoded)
+                low, high = 0, len(choices) - 1
+                if low == high: high = low + 0.1
+                bounds.append([low, high])
+                categorical_features.append(i)
+
+        train_x = torch.tensor(np.stack(train_x_list, axis=1), dtype=torch.float32).to(DEVICE)
+        bounds_t = torch.tensor(bounds, dtype=torch.float32).T.to(DEVICE)
+        
+        # Prepare Objectives (Y)
+        train_y_list = []
+        weights_list = []
+        for obj in objectives_config:
+            weights_list.append(float(obj.get('importance', 1)))
+            vals = pd.to_numeric(df[obj['name']], errors='coerce').fillna(0).values
+            if obj['type'] == 'minimize': train_y_list.append(-vals)
+            elif obj['type'] == 'maximize': train_y_list.append(vals)
+            elif obj['type'] == 'target':
+                target = float(obj.get('target', 0))
+                variance = np.var(vals) if np.var(vals) > 0 else 1.0
+                train_y_list.append(-((vals - target)**2) / variance)
+        
+        train_y = torch.tensor(np.stack(train_y_list, axis=1), dtype=torch.float32).to(DEVICE)
+        weights_t = torch.tensor(weights_list, dtype=torch.float32).to(DEVICE)
+
+        # Build and Fit Model
+        kernel_name = tweaks.get('kernel', 'matern52')
+        def get_kernel(k_name):
+            if k_name == 'rbf': return ScaleKernel(RBFKernel()).to(DEVICE)
+            if k_name == 'matern32': return ScaleKernel(MaternKernel(nu=1.5)).to(DEVICE)
+            if k_name == 'matern12': return ScaleKernel(MaternKernel(nu=0.5)).to(DEVICE)
+            return ScaleKernel(MaternKernel(nu=2.5)).to(DEVICE)
+
+        def build_single_model(tx, ty_slice):
+            all_dims = list(range(tx.shape[1]))
+            cont_dims = [i for i in all_dims if i not in categorical_features]
+            input_tf = Normalize(d=tx.shape[1], bounds=bounds_t.to(COMPUTE_DEVICE)[:, cont_dims], indices=cont_dims).to(COMPUTE_DEVICE) if cont_dims else None
+            if categorical_features:
+                return MixedSingleTaskGP(tx.to(COMPUTE_DEVICE), ty_slice.to(COMPUTE_DEVICE), cat_dims=categorical_features, outcome_transform=Standardize(m=1), input_transform=input_tf).to(COMPUTE_DEVICE)
+            return SingleTaskGP(tx.to(COMPUTE_DEVICE), ty_slice.to(COMPUTE_DEVICE), covar_module=get_kernel(kernel_name).to(COMPUTE_DEVICE), outcome_transform=Standardize(m=1), input_transform=input_tf).to(COMPUTE_DEVICE)
+
+        if train_y.shape[1] > 1:
+            models = [build_single_model(train_x, train_y[:, i:i+1]) for i in range(train_y.shape[1])]
+            model = ModelListGP(*models).to(COMPUTE_DEVICE)
+            mll = SumMarginalLogLikelihood(model.likelihood, model).to(COMPUTE_DEVICE)
+        else:
+            model = build_single_model(train_x, train_y).to(COMPUTE_DEVICE)
+            mll = ExactMarginalLogLikelihood(model.likelihood, model).to(COMPUTE_DEVICE)
+        
+        fit_gpytorch_mll(mll)
+        model.eval()
+
+        # Prepare Input Point
+        input_point_list = []
+        for i, f in enumerate(features_config):
+            val = input_values[f['name']]
+            if f['type'] == 'categorical':
+                choices = [str(x).strip() for x in f['range'].split(',')]
+                val = choices.index(str(val)) if str(val) in choices else 0
+            input_point_list.append(float(val))
+        
+        test_x = torch.tensor([input_point_list], dtype=torch.float32).to(COMPUTE_DEVICE)
+        
+        with torch.no_grad():
+            posterior = model.posterior(test_x)
+            means = posterior.mean.cpu().numpy()[0]
+            # Standard deviations (square root of variance)
+            stds = np.sqrt(posterior.variance.cpu().numpy()[0])
+
+        # Decode Predictions
+        predictions = {}
+        success_scores = {}
+        processed_success = []
+        
+        for i, obj in enumerate(objectives_config):
+            name = obj['name']
+            raw_pred = means[i]
+            
+            # Back-transform from internal optimization space
+            if obj['type'] == 'minimize':
+                final_val = -raw_pred
+            elif obj['type'] == 'maximize':
+                final_val = raw_pred
+            elif obj['type'] == 'target':
+                # For target, the model predicts the negative squared error.
+                # It's hard to recover the exact value without knowing which side of the target we are on.
+                # However, for an estimator, we usually want to predict the original value.
+                # Let's fit separate models for the RAW values for the estimator.
+                pass
+        
+        # Actually, let's just fit models for the RAW values for the estimator to make it simpler and more accurate for the user.
+        raw_predictions = {}
+        for i, obj in enumerate(objectives_config):
+            name = obj['name']
+            y_raw = pd.to_numeric(df[name], errors='coerce').fillna(0).values
+            y_raw_t = torch.tensor(y_raw, dtype=torch.float32).unsqueeze(-1).to(DEVICE)
+            
+            m_raw = build_single_model(train_x, y_raw_t)
+            mll_raw = ExactMarginalLogLikelihood(m_raw.likelihood, m_raw).to(COMPUTE_DEVICE)
+            fit_gpytorch_mll(mll_raw)
+            m_raw.eval()
+            
+            with torch.no_grad():
+                # Use posterior to ensure un-standardization
+                post_raw = m_raw.posterior(test_x)
+                pred_raw = post_raw.mean.item()
+                raw_predictions[name] = round(float(pred_raw), 3)
+            
+            # Calculate success score for this prediction
+            val = raw_predictions[name]
+            if obj['type'] == 'maximize': s = val
+            elif obj['type'] == 'minimize': s = -val
+            else: s = -abs(val - float(obj.get('target', 0)))
+            
+            # Normalize based on training range
+            train_vals = pd.to_numeric(df[name], errors='coerce').fillna(0).values
+            if obj['type'] == 'maximize': t_s = train_vals
+            elif obj['type'] == 'minimize': t_s = -train_vals
+            else: t_s = -np.abs(train_vals - float(obj.get('target', 0)))
+            
+            s_min, s_max = t_s.min(), t_s.max()
+            norm_s = (s - s_min) / (s_max - s_min + 1e-9) if s_max > s_min else 1.0
+            success_scores[name] = round(float(np.clip(norm_s, 0, 1) * 100), 1)
+            processed_success.append(np.clip(norm_s, 0, 1))
+
+        global_score = np.average(processed_success, weights=weights_list) if processed_success else 0
+        
+        return jsonify({
+            'predictions': raw_predictions,
+            'success_scores': success_scores,
+            'global_success': round(float(global_score * 100), 1)
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 def run_sa():
     try:
         req_data = request.get_json()

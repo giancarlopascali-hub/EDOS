@@ -248,7 +248,10 @@
             <div class="run-container">
                 <button id="run-btn" class="btn primary x-large">Run Bayesian Optimization</button>
             </div>
-            <section id="results-section" class="card hidden">
+
+            <!-- BO Results & Analysis -->
+            <div id="bo-results-container" class="hidden">
+                <section id="results-section" class="card">
                 <div class="card-header">
                     <h2>Suggested Experiments</h2>
                     <div style="display: flex; gap: 10px;">
@@ -262,6 +265,25 @@
                     <button id="import-results-btn" class="btn small" style="background-color: var(--accent-light);">Import Results CSV</button>
                     <input type="file" id="import-results-input" style="display: none;" accept=".csv">
                     <button id="export-features-btn" class="btn small">Export Features CSV</button>
+                </div>
+            </section>
+
+            <section class="card">
+                <div class="card-header">
+                    <h2>BO Model Performance</h2>
+                </div>
+                <div id="bo-performance-info"></div>
+            </section>
+
+            <section class="card">
+                <h2>BO Outcome Estimator</h2>
+                <p class="text-secondary" style="font-size: 0.9rem; margin-bottom: 1.5rem;">Estimate objective values for specific feature settings using the current BO model.</p>
+                <div id="bo-estimator-inputs" class="tweak-grid" style="margin-bottom: 2rem;">
+                    <!-- Inputs injected here -->
+                </div>
+                <button id="bo-estimate-btn" class="btn btn-primary" style="width: 100%; padding: 1rem; font-size: 1.1rem; margin-bottom: 1.5rem;">Run BO Estimation</button>
+                <div id="bo-estimate-results" class="results-table-container shadow-inner" style="background: #fdfdfd; padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color); min-height: 100px;">
+                    <!-- Results injected here -->
                 </div>
             </section>
         </div>

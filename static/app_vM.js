@@ -729,6 +729,7 @@ function initButtons() {
     safeAddListener('run-btn', 'click', runBO);
     safeAddListener('sa-run-btn', 'click', runSA);
     safeAddListener('sa-estimate-btn', 'click', runEstimate);
+    safeAddListener('bo-estimate-btn', 'click', runBOEstimate);
     safeAddListener('shutdown-btn', 'click', async () => {
         if (confirm('Are you sure you want to shut down the EDOS server?')) {
             try {
@@ -1322,6 +1323,14 @@ function renderDoEResults(metrics) {
 }
 
 async function runBO() {
+    // Clear previous results
+    const perfInfo = document.getElementById('bo-performance-info');
+    if (perfInfo) perfInfo.innerHTML = '';
+    const estRes = document.getElementById('bo-estimate-results');
+    if (estRes) estRes.innerHTML = '';
+    const boResContainer = document.getElementById('bo-results-container');
+    if (boResContainer) boResContainer.classList.add('hidden');
+
     const features = Array.from(document.querySelectorAll('#bo-features-list tr'))
         .filter(tr => tr.querySelector('.bo-f-include').checked)
         .map(tr => ({
@@ -1366,6 +1375,18 @@ async function runBO() {
         if (result.error) return alert("Optimization Error: " + result.error);
         
         suggestionsData = result.suggestions;
+        
+        // Render Performance Table
+        if (result.performance) {
+            renderBOPerformanceTable(result.performance);
+        }
+        
+        // Render Estimator
+        renderBOEstimator();
+        
+        // Show the container
+        const boResContainer = document.getElementById('bo-results-container');
+        if (boResContainer) boResContainer.classList.remove('hidden');
     } catch (err) {
         document.getElementById('loading-overlay').classList.add('hidden');
         if (err.name === 'AbortError') return console.log('BO calculation aborted by user.');
@@ -2430,5 +2451,141 @@ async function exportSAReport() {
         console.error(err);
     } finally {
         overlay.classList.add('hidden');
+    }
+}
+function renderBOPerformanceTable(performance) {
+    const container = document.getElementById('bo-performance-info');
+    if (!container) return;
+
+    const getFittingSuggestion = (status) => {
+        switch(status) {
+            case 'Good': return 'Reliable model for interpolation.';
+            case 'Limited': return 'Moderate predictive power; use with caution.';
+            case 'Poor': return 'Low predictive power; the BO model may be uncertain in some regions.';
+            default: return '';
+        }
+    };
+
+    let html = `
+        <table class="setup-table" style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+            <thead>
+                <tr style="text-align: left; border-bottom: 2px solid var(--border-color);">
+                    <th style="padding: 10px;">Objective</th>
+                    <th style="padding: 10px;">Predictive Power (R²)</th>
+                    <th style="padding: 10px;">Status</th>
+                    <th style="padding: 10px;">Suggestion</th>
+                </tr>
+            </thead>
+            <tbody>`;
+
+    for (const obj in performance) {
+        const r = performance[obj];
+        const statusClass = r.status.toLowerCase();
+        let nameDisplay = `<b>${obj}</b>`;
+        if (obj === 'global_success') nameDisplay = `<span style="color: var(--accent-color);">✨ <b>Global Success Index</b></span>`;
+
+        html += `
+            <tr style="border-bottom: 1px solid var(--border-color);">
+                <td style="padding: 10px;">${nameDisplay}</td>
+                <td style="padding: 10px;">${r.r2 ?? 'N/A'}</td>
+                <td style="padding: 10px;"><span class="badge ${statusClass}">${r.status}</span></td>
+                <td style="padding: 10px; font-size: 0.9rem; color: var(--text-secondary);">${getFittingSuggestion(r.status)}</td>
+            </tr>`;
+    }
+    html += `</tbody></table>`;
+    container.innerHTML = html;
+}
+
+function renderBOEstimator() {
+    const estDiv = document.getElementById('bo-estimator-inputs');
+    if (!estDiv) return;
+
+    const features = Array.from(document.querySelectorAll('#bo-features-list tr'))
+        .filter(tr => tr.querySelector('.bo-f-include').checked)
+        .map(tr => ({
+            name: tr.querySelector('.bo-f-type').dataset.col,
+            type: tr.querySelector('.bo-f-type').value,
+            range: tr.querySelector('.bo-f-range').value
+        }));
+
+    estDiv.innerHTML = features.map(f => {
+        if (f.type === 'categorical') {
+            const choices = f.range.split(',').map(c => c.trim());
+            const options = choices.map(v => `<option value="${v}">${v}</option>`).join('');
+            return `
+            <div class="tweak-item">
+                <label>${f.name}</label>
+                <select class="bo-est-input" data-col="${f.name}">${options}</select>
+            </div>`;
+        } else {
+            return `
+            <div class="tweak-item">
+                <label>${f.name}</label>
+                <input type="number" class="bo-est-input" data-col="${f.name}" step="any">
+            </div>`;
+        }
+    }).join('');
+}
+
+async function runBOEstimate() {
+    const inputs = {};
+    document.querySelectorAll('.bo-est-input').forEach(el => inputs[el.dataset.col] = el.value);
+    
+    const features = Array.from(document.querySelectorAll('#bo-features-list tr'))
+        .filter(tr => tr.querySelector('.bo-f-include').checked)
+        .map(tr => ({
+            name: tr.querySelector('.bo-f-type').dataset.col,
+            type: tr.querySelector('.bo-f-type').value,
+            range: tr.querySelector('.bo-f-range').value
+        }));
+
+    const objectives = Array.from(document.querySelectorAll('#bo-objectives-list tr'))
+        .filter(tr => tr.querySelector('.bo-o-include').checked)
+        .map(tr => ({
+            name: tr.querySelector('.bo-o-type').dataset.col,
+            type: tr.querySelector('.bo-o-type').value,
+            target: tr.querySelector('.bo-o-target').value,
+            importance: tr.querySelector('.bo-o-importance').value
+        }));
+
+    const strategy = document.querySelector('input[name="bo-strategy"]:checked').value;
+    const tweaks = {
+        kernel: document.getElementById('kernel-select').value,
+        optimization_strategy: strategy
+    };
+
+    const resultsDiv = document.getElementById('bo-estimate-results');
+    resultsDiv.innerHTML = '<div style="color: var(--text-secondary); animation: pulse 1.5s infinite;"><i>Calculating BO predictions...</i></div>';
+
+    try {
+        const res = await fetch('/estimate_bo', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                data: currentData, columns: currentColumns,
+                features, objectives, tweaks, inputs
+            })
+        });
+        const result = await res.json();
+        if (result.error) {
+            resultsDiv.innerHTML = `<span style="color:red">Error: ${result.error}</span>`;
+            return;
+        }
+
+        let html = '<div style="margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid var(--border-color);">';
+        html += `<b>Estimated Global Success Score: <span style="font-size: 1.2rem; color: var(--accent-color);">${result.global_success}%</span></b></div>`;
+        html += '<b>Predictions:</b><br>';
+        for (const obj in result.predictions) {
+            const val = result.predictions[obj];
+            const succ = result.success_scores[obj];
+            html += `<div style="display: flex; justify-content: space-between; margin: 4px 0;">
+                        <span><b>${obj}:</b> ${val}</span>
+                        <span style="color: ${succ > 80 ? '#22c55e' : (succ > 50 ? '#f59e0b' : '#ef4444')}">Success: ${succ}%</span>
+                     </div>`;
+        }
+        resultsDiv.innerHTML = html;
+    } catch(err) {
+        resultsDiv.innerHTML = `<span style="color:red">Request failed: ${err.message}</span>`;
+        console.error(err);
     }
 }
